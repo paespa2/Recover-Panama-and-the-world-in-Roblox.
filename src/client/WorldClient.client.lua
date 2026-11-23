@@ -12,6 +12,9 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local AssetService = game:GetService("AssetService")
 
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local WorldGrid = require(Shared:WaitForChild("WorldGrid"))
+
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
@@ -48,6 +51,7 @@ local state = {
 	myId = -1,
 	land = nil,
 	owner = nil,
+	baseBuffer = nil,
 	roster = {},
 	rosterById = {},
 	stats = nil,
@@ -812,38 +816,76 @@ local function initEditableImage(w, h)
 end
 
 local function drawCell(idx, ownerId)
-	if not state.editableImage or not state.pixelBuffer then
+	if not state.editableImage or not state.pixelBuffer or not state.baseBuffer then
 		return
 	end
 
-	local isLand = buffer.readu8(state.land, idx) == 1
-	local offset = idx * 4
+	local offset4 = idx * 4
+	local offset3 = idx * 3
 
-	local r, g, b = 15, 32, 58
-	if not isLand then
-		r, g, b = 12, 24, 46
-	elseif ownerId == 0 then
-		r, g, b = 75, 88, 80
-	else
+	local baseR = buffer.readu8(state.baseBuffer, offset3)
+	local baseG = buffer.readu8(state.baseBuffer, offset3 + 1)
+	local baseB = buffer.readu8(state.baseBuffer, offset3 + 2)
+
+	local r, g, b = baseR, baseG, baseB
+
+	if ownerId > 0 then
 		local n = state.rosterById[ownerId]
 		if n then
-			r = n.r or (n.color and math.floor(n.color.R * 255)) or 200
-			g = n.g or (n.color and math.floor(n.color.G * 255)) or 200
-			b = n.b or (n.color and math.floor(n.color.B * 255)) or 200
+			local nr = n.r or 200
+			local ng = n.g or 200
+			local nb = n.b or 200
 
-			-- Si es la nación del jugador humano, aumentamos el brillo
-			if ownerId == state.myId then
-				r = math.min(255, r + 45)
-				g = math.min(255, g + 45)
-				b = math.min(255, b + 45)
+			-- Detectar si es celda fronteriza
+			local w, h = state.w, state.h
+			local x = idx % w
+			local y = idx // w
+			local isBorder = false
+
+			local leftIdx = y * w + (if x == 0 then w - 1 else x - 1)
+			local rightIdx = y * w + (if x == w - 1 then 0 else x + 1)
+			if buffer.readu8(state.owner, leftIdx) ~= ownerId or buffer.readu8(state.owner, rightIdx) ~= ownerId then
+				isBorder = true
+			elseif y > 0 and buffer.readu8(state.owner, (y - 1) * w + x) ~= ownerId then
+				isBorder = true
+			elseif y < h - 1 and buffer.readu8(state.owner, (y + 1) * w + x) ~= ownerId then
+				isBorder = true
+			end
+
+			local isMe = (ownerId == state.myId)
+
+			if isBorder then
+				-- Fronteras marcadas con color nítido y saturado
+				if isMe then
+					-- Borde dorado neón resplandeciente para el jugador
+					r = 255
+					g = 235
+					b = 40
+				else
+					r = math.min(255, math.floor(nr * 1.35))
+					g = math.min(255, math.floor(ng * 1.35))
+					b = math.min(255, math.floor(nb * 1.35))
+				end
+			else
+				-- Interior: Mezcla armoniosa que permite ver el terreno y la geografía
+				local alpha = isMe and 0.68 or 0.55
+				r = math.floor(nr * alpha + baseR * (1 - alpha))
+				g = math.floor(ng * alpha + baseG * (1 - alpha))
+				b = math.floor(nb * alpha + baseB * (1 - alpha))
+
+				if isMe then
+					r = math.min(255, math.floor(r * 1.15))
+					g = math.min(255, math.floor(g * 1.15))
+					b = math.min(255, math.floor(b * 1.15))
+				end
 			end
 		end
 	end
 
-	buffer.writeu8(state.pixelBuffer, offset, r)
-	buffer.writeu8(state.pixelBuffer, offset + 1, g)
-	buffer.writeu8(state.pixelBuffer, offset + 2, b)
-	buffer.writeu8(state.pixelBuffer, offset + 3, 255)
+	buffer.writeu8(state.pixelBuffer, offset4, r)
+	buffer.writeu8(state.pixelBuffer, offset4 + 1, g)
+	buffer.writeu8(state.pixelBuffer, offset4 + 2, b)
+	buffer.writeu8(state.pixelBuffer, offset4 + 3, 255)
 end
 
 local function flushImage()
@@ -1124,6 +1166,7 @@ WorldInit.OnClientEvent:Connect(function(data)
 	end
 
 	initEditableImage(state.w, state.h)
+	state.baseBuffer = WorldGrid.BuildBase(state.planet, state.land)
 	fullRedraw()
 	updateMarkers()
 	updateMapTransform()

@@ -1602,24 +1602,89 @@ local function mix3(c1, c2, t)
 end
 
 local function earthLandColor(x, y)
-	local lat = math.abs(WorldGrid.LatOfRow(y))
-	local r, g, b
-	if lat > 66 then
-		r, g, b = 232, 238, 244
-	elseif lat > 52 then
-		r, g, b = 62, 108, 70
-	elseif lat > 36 then
-		r, g, b = 90, 146, 74
-	elseif lat > 14 then
-		local d = math.noise(x * 0.085, y * 0.11, 2.2)
-		if d > 0.08 then
-			r, g, b = 214, 190, 124
+	local realLat = WorldGrid.LatOfRow(y)
+	local lat = math.abs(realLat)
+	local lon = (x / W) * 360 - 180
+
+	local r, g, b = 68, 142, 64 -- Llanuras y valles templados fértiles por defecto
+
+	-- Ruido orgánico para contornos naturales de biomas y cordilleras
+	local bioNoise = math.noise(x * 0.035, y * 0.045, 2.1) * 4.5
+	local ridgeNoise = math.noise(x * 0.14, y * 0.14, 4.3)
+
+	-- 1. Casquetes polares y tundra helada
+	if lat > (68 + bioNoise) or realLat < -58 then
+		r, g, b = 236, 244, 252 -- Nieve y hielo glaciar
+	elseif lat > (54 + bioNoise) then
+		r, g, b = 46, 102, 54 -- Bosques boreales y taiga de Canadá y Siberia
+
+	-- 2. Cordilleras montañosas naturales (crestas rocosas y picos nevados)
+	-- Cordillera de los Andes (Sudamérica)
+	elseif lon >= -78 and lon <= -67 and realLat >= -54 and realLat <= 8 and ridgeNoise > 0.18 then
+		r, g, b = 142, 138, 148 -- Picos rocosos de los Andes
+		if ridgeNoise > 0.42 then
+			r, g, b = 232, 238, 246 -- Cumbres nevadas
+		end
+	-- Cordillera del Himalaya (Norte de India / Tíbet)
+	elseif lon >= 74 and lon <= 98 and realLat >= 27 and realLat <= 36 and ridgeNoise > 0.16 then
+		r, g, b = 148, 142, 152
+		if ridgeNoise > 0.38 then
+			r, g, b = 238, 244, 252 -- Everest y nieves eternas
+		end
+	-- Montañas Rocosas (Norteamérica)
+	elseif lon >= -122 and lon <= -106 and realLat >= 34 and realLat <= 58 and ridgeNoise > 0.22 then
+		r, g, b = 140, 136, 144
+		if ridgeNoise > 0.45 then
+			r, g, b = 226, 232, 242
+		end
+	-- Alpes (Europa)
+	elseif lon >= 6 and lon <= 16 and realLat >= 44 and realLat <= 48 and ridgeNoise > 0.15 then
+		r, g, b = 152, 148, 156
+		if ridgeNoise > 0.4 then
+			r, g, b = 232, 238, 246
+		end
+
+	-- 3. Desiertos y dunas doradas
+	-- Desierto del Sahara y Península Arábiga
+	elseif realLat >= (14 + bioNoise) and realLat <= (32 + bioNoise) and lon >= -17 and lon <= 56 then
+		r, g, b = 228, 196, 124 -- Arena dorada del Sahara y Arabia
+	-- Desierto de Gobi (Asia)
+	elseif realLat >= (38 + bioNoise) and realLat <= (46 + bioNoise) and lon >= 92 and lon <= 116 then
+		r, g, b = 212, 184, 120
+	-- Outback Australiano
+	elseif realLat >= (-32 + bioNoise) and realLat <= (-18 + bioNoise) and lon >= 118 and lon <= 142 then
+		r, g, b = 216, 144, 86 -- Tierra roja y ocre del interior de Australia
+	-- Desierto de Atacama
+	elseif realLat >= -28 and realLat <= -18 and lon >= -72 and lon <= -68 then
+		r, g, b = 214, 180, 125
+
+	-- 4. Selvas tropicales densas y cuencas fluviales
+	-- Cuenca del Amazonas (Sudamérica)
+	elseif realLat >= (-14 + bioNoise) and realLat <= (5 + bioNoise) and lon >= -75 and lon <= -48 then
+		r, g, b = 24, 128, 48 -- Verde esmeralda profundo de la selva amazónica
+	-- Istmo de Panamá y Centroamérica
+	elseif realLat >= 7 and realLat <= 12 and lon >= -84 and lon <= -77 then
+		r, g, b = 30, 140, 54 -- Selva tropical y canales de Panamá
+	-- Cuenca del Congo (África Central)
+	elseif realLat >= (-6 + bioNoise) and realLat <= (6 + bioNoise) and lon >= 12 and lon <= 30 then
+		r, g, b = 26, 124, 46
+	-- Sudeste Asiático e Indonesia
+	elseif realLat >= (-10 + bioNoise) and realLat <= (18 + bioNoise) and lon >= 95 and lon <= 145 then
+		r, g, b = 28, 132, 50
+
+	-- 5. Sabanas y estepas templadas
+	elseif lat > 12 and lat <= 38 then
+		local d = math.noise(x * 0.08, y * 0.1, 2.2)
+		if d > 0.1 then
+			r, g, b = 186, 176, 106 -- Estepa seca
 		else
-			r, g, b = 150, 164, 82
+			r, g, b = 92, 158, 68 -- Sabana / Llanuras
 		end
 	else
-		r, g, b = 38, 114, 58
+		-- Valles templados
+		r, g, b = 62, 140, 58
 	end
+
 	return r, g, b
 end
 
@@ -1658,21 +1723,19 @@ function WorldGrid.BuildBase(planetId, land)
 				r, g, b = r * shade, g * shade, b * shade
 			else
 				local near1, near2 = false, false
-				for dy = -1, 1 do
-					for dx = -1, 1 do
-						if (dx ~= 0 or dy ~= 0) and isLand(x + dx, y + dy) then
-							near1 = true
-						end
-					end
-				end
-				if not near1 then
-					for dy = -2, 2, 2 do
-						for dx = -2, 2, 2 do
-							if (dx ~= 0 or dy ~= 0) and isLand(x + dx, y + dy) then
-								near2 = true
-							end
-						end
-					end
+				if
+					isLand(x - 1, y)
+					or isLand(x + 1, y)
+					or isLand(x, y - 1)
+					or isLand(x, y + 1)
+					or isLand(x - 1, y - 1)
+					or isLand(x + 1, y - 1)
+					or isLand(x - 1, y + 1)
+					or isLand(x + 1, y + 1)
+				then
+					near1 = true
+				elseif isLand(x - 2, y) or isLand(x + 2, y) or isLand(x, y - 2) or isLand(x, y + 2) then
+					near2 = true
 				end
 				local c = def.ocean
 				if near1 then
