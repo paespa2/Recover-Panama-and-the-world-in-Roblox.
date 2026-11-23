@@ -291,7 +291,7 @@ leaderFrame.AnchorPoint = Vector2.new(1, 0)
 leaderFrame.Position = UDim2.new(1, -16, 0, 62)
 leaderFrame.Size = UDim2.fromOffset(230, 250)
 leaderFrame.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
-leaderFrame.BackgroundTransparency = 0.2
+leaderFrame.BackgroundTransparency = 0.04 -- casi opaco: los rótulos del mapa no deben transparentarse
 leaderFrame.BorderSizePixel = 0
 leaderFrame.ZIndex = 20
 leaderFrame.Parent = root
@@ -304,6 +304,9 @@ local leaderStroke = Instance.new("UIStroke")
 leaderStroke.Color = Color3.fromRGB(45, 60, 90)
 leaderStroke.Thickness = 1
 leaderStroke.Parent = leaderFrame
+
+local leaderScale = Instance.new("UIScale")
+leaderScale.Parent = leaderFrame
 
 local leaderTitle = Instance.new("TextLabel")
 leaderTitle.Size = UDim2.new(1, 0, 0, 26)
@@ -335,7 +338,8 @@ local bottomHUD = Instance.new("Frame")
 bottomHUD.Name = "BottomHUD"
 bottomHUD.AnchorPoint = Vector2.new(0.5, 1)
 bottomHUD.Position = UDim2.new(0.5, 0, 1, -12)
-bottomHUD.Size = UDim2.fromOffset(860, 100)
+-- 7 botones de 132 px + separación (140 px de paso) + márgenes: 10 + 6*140 + 132 + 10 = 992 px
+bottomHUD.Size = UDim2.fromOffset(1000, 104)
 bottomHUD.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
 bottomHUD.BackgroundTransparency = 0.12
 bottomHUD.BorderSizePixel = 0
@@ -350,6 +354,10 @@ local bottomStroke = Instance.new("UIStroke")
 bottomStroke.Color = Color3.fromRGB(50, 70, 110)
 bottomStroke.Thickness = 1.5
 bottomStroke.Parent = bottomHUD
+
+-- Los paneles de tamaño fijo se reescalan según la pantalla (ver fitUI) para no deformarse ni salirse
+local hudScale = Instance.new("UIScale")
+hudScale.Parent = bottomHUD
 
 -- Fila Superior del HUD: Estadísticas del jugador
 local statsRow = Instance.new("Frame")
@@ -1219,6 +1227,26 @@ local function initBlocks(w, h)
 	)
 end
 
+-- Animación de propagación: bloques recién conquistados destellan y se asientan en 0,9 s
+local flashing = {}
+local flashCount = 0
+local FLASH_TIME = 0.9
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	for b, t0 in pairs(flashing) do
+		local a = (now - t0) / FLASH_TIME
+		if a >= 1 then
+			b.frame.BackgroundColor3 = b.finalColor
+			b.frame.BackgroundTransparency = b.finalTransp
+			flashing[b] = nil
+			flashCount -= 1
+		else
+			b.frame.BackgroundColor3 = b.finalColor:Lerp(Color3.new(1, 1, 1), 0.65 * (1 - a))
+			b.frame.BackgroundTransparency = 0.05 + (b.finalTransp - 0.05) * a
+		end
+	end
+end)
+
 local function recolorBlock(bi)
 	local b = state.blocks[bi]
 	if not b then
@@ -1271,12 +1299,30 @@ local function recolorBlock(bi)
 	elseif state.useTiles then
 		transparency = 1
 	end
-	b.frame.BackgroundTransparency = transparency
-	b.frame.BackgroundColor3 = Color3.fromRGB(
+	local finalColor = Color3.fromRGB(
 		math.clamp(math.floor(r), 0, 255),
 		math.clamp(math.floor(g), 0, 255),
 		math.clamp(math.floor(bl), 0, 255)
 	)
+	-- Propagación: al cambiar de dueño, el bloque "destella" claro y se asienta en su color (ver Heartbeat arriba)
+	local ownerNow = if n then bestId else 0
+	if state.animReady and n and b.owner ~= ownerNow and flashCount < 900 then
+		b.finalColor, b.finalTransp = finalColor, transparency
+		b.frame.BackgroundColor3 = finalColor:Lerp(Color3.new(1, 1, 1), 0.65)
+		b.frame.BackgroundTransparency = 0.05
+		if not flashing[b] then
+			flashCount += 1
+		end
+		flashing[b] = os.clock()
+	else
+		if flashing[b] then
+			flashing[b] = nil
+			flashCount -= 1
+		end
+		b.frame.BackgroundColor3 = finalColor
+		b.frame.BackgroundTransparency = transparency
+	end
+	b.owner = ownerNow
 end
 
 local function markBlockDirty(idx)
@@ -1436,6 +1482,7 @@ function fullRedraw()
 		if not state.blocks or not state.owner or not state.baseBuffer then
 			return
 		end
+		state.animReady = false -- el primer dibujado no debe animarse
 		-- Color base de cada bloque = media de la foto satelital (incluye mar y costas)
 		local w, base = state.w, state.baseBuffer
 		local area = BLOCK * BLOCK
@@ -1456,6 +1503,7 @@ function fullRedraw()
 			state.dirtyBlocks[bi] = true
 		end
 		flushImage()
+		state.animReady = true -- a partir de aquí, las conquistas se animan
 		return
 	end
 	if not state.editableImage or not state.pixelBuffer or not state.land or not state.owner then
@@ -1698,41 +1746,120 @@ local function updateMapTransform()
 	applyLabelZoom()
 end
 
+-- Controles del mapa (como en los juegos de conquista):
+--   · Arrastrar con el botón izquierdo (o un dedo) mueve el mapa; un clic corto ataca / construye / elige.
+--   · Botón derecho o central: arrastrar también mueve el mapa.
+--   · Rueda del ratón o pellizco: zoom hacia el cursor.   · WASD o flechas: mover.   · Q / E: zoom.
+local PAN_THRESHOLD = 6 -- píxeles de arrastre a partir de los cuales deja de ser un clic
+local drag =
+	{ active = false, kind = "click", start = Vector2.zero, startPan = Vector2.zero, moved = false, input = nil }
+
+-- Evita perder el mapa fuera de la pantalla
+local function clampPan()
+	local vs = mapContainer.AbsoluteSize
+	local maxX = BASE_WIDTH * state.zoom / 2 + vs.X / 2 - 140
+	local maxY = BASE_HEIGHT * state.zoom / 2 + vs.Y / 2 - 140
+	state.pan = Vector2.new(math.clamp(state.pan.X, -maxX, maxX), math.clamp(state.pan.Y, -maxY, maxY))
+end
+
+-- Zoom manteniendo fijo el punto del mapa que hay bajo el cursor
+local function zoomAt(screenPos, factor)
+	local newZoom = math.clamp(state.zoom * factor, 0.25, 8.0)
+	local f = newZoom / state.zoom
+	local center = mapCanvas.AbsolutePosition + mapCanvas.AbsoluteSize / 2
+	state.pan = state.pan + (screenPos - center) * (1 - f)
+	state.zoom = newZoom
+	clampPan()
+	updateMapTransform()
+end
+
 mapContainer.InputBegan:Connect(function(input)
-	if
-		input.UserInputType == Enum.UserInputType.MouseButton2
-		or input.UserInputType == Enum.UserInputType.MouseButton3
-	then
-		state.isDragging = true
-		state.dragStartMouse = Vector2.new(input.Position.X, input.Position.Y)
-		state.dragStartPan = state.pan
-	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+	local t = input.UserInputType
+	if t == Enum.UserInputType.MouseButton2 or t == Enum.UserInputType.MouseButton3 then
+		drag.active, drag.kind, drag.moved, drag.input = true, "pan", true, input
+	elseif t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+		drag.active, drag.kind, drag.moved, drag.input = true, "click", false, input
+	else
+		return
+	end
+	drag.start = Vector2.new(input.Position.X, input.Position.Y)
+	drag.startPan = state.pan
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if not drag.active then
+		return
+	end
+	local t = input.UserInputType
+	local pressesPan = drag.kind == "pan"
+		and (t == Enum.UserInputType.MouseButton2 or t == Enum.UserInputType.MouseButton3)
+	local pressesClick = drag.kind == "click"
+		and (t == Enum.UserInputType.MouseButton1 or (t == Enum.UserInputType.Touch and input == drag.input))
+	if not (pressesPan or pressesClick) then
+		return
+	end
+	if pressesClick and not drag.moved then
 		local cell = screenToCell(Vector2.new(input.Position.X, input.Position.Y))
 		if cell >= 0 then
 			handleMapClick(cell)
 		end
 	end
-end)
-
-mapContainer.InputEnded:Connect(function(input)
-	if
-		input.UserInputType == Enum.UserInputType.MouseButton2
-		or input.UserInputType == Enum.UserInputType.MouseButton3
-	then
-		state.isDragging = false
-	end
+	drag.active = false
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if state.isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local current = Vector2.new(input.Position.X, input.Position.Y)
-		local delta = current - state.dragStartMouse
-		state.pan = state.dragStartPan + delta
+	local t = input.UserInputType
+	if
+		drag.active
+		and (t == Enum.UserInputType.MouseMovement or (t == Enum.UserInputType.Touch and input == drag.input))
+	then
+		local delta = Vector2.new(input.Position.X, input.Position.Y) - drag.start
+		if not drag.moved and delta.Magnitude >= PAN_THRESHOLD then
+			drag.moved = true
+		end
+		if drag.moved then
+			state.pan = drag.startPan + delta
+			clampPan()
+			updateMapTransform()
+		end
+	elseif t == Enum.UserInputType.MouseWheel then
+		zoomAt(UserInputService:GetMouseLocation(), if input.Position.Z > 0 then 1.15 else 0.87)
+	end
+end)
+
+-- Pellizco con dos dedos: zoom (cancela el clic del primer dedo)
+local pinchStartZoom = 1
+UserInputService.TouchPinch:Connect(function(_positions, scale, _velocity, inputState)
+	drag.moved = true
+	if inputState == Enum.UserInputState.Begin then
+		pinchStartZoom = state.zoom
+	else
+		local target = math.clamp(pinchStartZoom * scale, 0.25, 8.0)
+		zoomAt(mapContainer.AbsoluteSize / 2, target / state.zoom)
+	end
+end)
+
+-- Teclado: WASD / flechas mueven la vista; Q / E acercan y alejan
+RunService.RenderStepped:Connect(function(dt)
+	if UserInputService:GetFocusedTextBox() or lobbyScreen.Visible then
+		return
+	end
+	local function down(a, b)
+		return UserInputService:IsKeyDown(a) or UserInputService:IsKeyDown(b)
+	end
+	local dx = (if down(Enum.KeyCode.A, Enum.KeyCode.Left) then 1 else 0)
+		- (if down(Enum.KeyCode.D, Enum.KeyCode.Right) then 1 else 0)
+	local dy = (if down(Enum.KeyCode.W, Enum.KeyCode.Up) then 1 else 0)
+		- (if down(Enum.KeyCode.S, Enum.KeyCode.Down) then 1 else 0)
+	if dx ~= 0 or dy ~= 0 then
+		state.pan = state.pan + Vector2.new(dx, dy) * 800 * dt
+		clampPan()
 		updateMapTransform()
-	elseif input.UserInputType == Enum.UserInputType.MouseWheel then
-		local factor = if input.Position.Z > 0 then 1.15 else 0.85
-		state.zoom = math.clamp(state.zoom * factor, 0.25, 8.0)
-		updateMapTransform()
+	end
+	if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+		zoomAt(mapContainer.AbsoluteSize / 2, 1 + 1.5 * dt)
+	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+		zoomAt(mapContainer.AbsoluteSize / 2, 1 / (1 + 1.5 * dt))
 	end
 end)
 
@@ -2058,6 +2185,26 @@ local countryConfirmCorner = Instance.new("UICorner")
 countryConfirmCorner.CornerRadius = UDim.new(0, 8)
 countryConfirmCorner.Parent = countryConfirm
 
+-- Adaptación a la pantalla: escala los paneles fijos (HUD, ranking, lista de países) y oculta lo que no cabe
+local countryScale = Instance.new("UIScale")
+countryScale.Parent = countryPanel
+
+local function fitUI()
+	local vs = root.AbsoluteSize
+	if vs.X <= 0 or vs.Y <= 0 then
+		return
+	end
+	local s = math.clamp(math.min(vs.X / 1100, vs.Y / 700), 0.5, 1.1)
+	hudScale.Scale = s
+	leaderScale.Scale = s
+	countryScale.Scale = s
+	-- La altura se calcula en píxeles "sin escala" para que el panel llene el espacio libre sin desbordar
+	countryPanel.Size = UDim2.fromOffset(290, math.max(220, (vs.Y - 210) / s))
+	titleLabel.Visible = vs.X >= 1180 -- en pantallas estrechas el título chocaría con los botones
+end
+root:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitUI)
+fitUI()
+
 -- Estado de la lista
 local cp = { rows = {}, headers = {}, collapsed = {}, selected = nil, taken = {}, built = false }
 
@@ -2114,6 +2261,11 @@ local function updateCountryPanel()
 
 	local alive = state.me and state.me.alive
 	if alive then
+		-- Al conseguir país, la lista se cierra sola una vez (se reabre con el botón "🌍 Países")
+		if not cp.autoHidden then
+			cp.autoHidden = true
+			countryPanel.Visible = false
+		end
 		countryConfirm.Text = "✅ Ya gobiernas tu país"
 		countryConfirm.BackgroundColor3 = Color3.fromRGB(30, 80, 60)
 	elseif cp.selected then
@@ -2148,6 +2300,7 @@ local function buildCountryPanel()
 	end
 	cp.rows, cp.headers, cp.collapsed, cp.selected, cp.taken = {}, {}, {}, nil, {}
 	cp.built = false
+	cp.autoHidden = false
 	countrySearch.Text = ""
 
 	local byCont = {}
