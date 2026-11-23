@@ -41,8 +41,8 @@ local HUMAN_AURA_COLOR = Color3.fromRGB(255, 220, 0)
 -- ESTADO DEL CLIENTE
 -- ============================================================================
 local state = {
-	w = 240,
-	h = 100,
+	w = 480,
+	h = 200,
 	planet = "EARTH",
 	difficulty = "NORMAL",
 	myId = -1,
@@ -1018,8 +1018,8 @@ end
 -- ============================================================================
 -- PAN & ZOOM (Navegación fluida por el mapa)
 -- ============================================================================
-local BASE_WIDTH = 1200
-local BASE_HEIGHT = 500
+local BASE_WIDTH = 1680
+local BASE_HEIGHT = 700
 
 local function updateMapTransform()
 	local viewportSize = mapContainer.AbsoluteSize
@@ -1088,9 +1088,10 @@ end)
 btnCenter.MouseButton1Click:Connect(function()
 	if state.myId > 0 and state.rosterById[state.myId] then
 		local me = state.rosterById[state.myId]
-		if me.capital then
-			local capX = me.capital.x or (me.capital.cell % state.w)
-			local capY = me.capital.y or math.floor(me.capital.cell / state.w)
+		if me.capital and me.capital >= 0 then
+			local capCell = me.capital
+			local capX = capCell % state.w
+			local capY = math.floor(capCell / state.w)
 
 			local normX = (capX + 0.5) / state.w - 0.5
 			local normY = (capY + 0.5) / state.h - 0.5
@@ -1136,11 +1137,11 @@ WorldDiff.OnClientEvent:Connect(function(diffBuf)
 		return
 	end
 
-	local count = math.floor(buffer.len(diffBuf) / 3)
+	local count = math.floor(buffer.len(diffBuf) / 4)
 	for i = 0, count - 1 do
-		local off = i * 3
-		local cell = buffer.readu16(diffBuf, off)
-		local ownerId = buffer.readu8(diffBuf, off + 2)
+		local packed = buffer.readu32(diffBuf, i * 4)
+		local cell = math.floor(packed / 256)
+		local ownerId = packed % 256
 
 		if cell < (state.w * state.h) then
 			buffer.writeu8(state.owner, cell, ownerId)

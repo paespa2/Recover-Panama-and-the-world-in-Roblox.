@@ -14,11 +14,11 @@ Engine.__index = Engine
 
 local SPAWN_SECONDS = 25
 local WIN_RATIO = 0.65
-local START_TROOPS = 1500
+local START_TROOPS = 2000
 local NUKE_COST = 900
-local NUKE_RADIUS = 5
-local POST_RADIUS = 7
-local PORT_RANGE = 45
+local NUKE_RADIUS = 9
+local POST_RADIUS = 12
+local PORT_RANGE = 80
 
 Engine.COSTS = { City = 500, Port = 400, Post = 350, Silo = 1200 }
 
@@ -336,9 +336,9 @@ end
 function Engine:spawnNation(n, cell)
 	local w, h = self.w, self.h
 	local cx, cy = cell % w, cell // w
-	for dy = -2, 2 do
-		for dx = -2, 2 do
-			if dx * dx + dy * dy <= 5 then
+	for dy = -3, 3 do
+		for dx = -3, 3 do
+			if dx * dx + dy * dy <= 10 then
 				local y = cy + dy
 				if y >= 0 and y < h then
 					local j = y * w + ((cx + dx) % w)
@@ -930,11 +930,11 @@ function Engine:flushDiff()
 		return nil
 	end
 	self.changes = {}
-	local buf = buffer.create(count * 3)
+	local buf = buffer.create(count * 4)
 	for k = 1, count do
 		local i = c[k]
-		buffer.writeu16(buf, (k - 1) * 3, i)
-		buffer.writeu8(buf, (k - 1) * 3 + 2, buffer.readu8(self.owner, i))
+		local ownerId = buffer.readu8(self.owner, i)
+		buffer.writeu32(buf, (k - 1) * 4, i * 256 + ownerId)
 	end
 	return buf
 end

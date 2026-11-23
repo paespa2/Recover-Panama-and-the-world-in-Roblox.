@@ -6,8 +6,8 @@
 
 local WorldGrid = {}
 
-WorldGrid.W = 240
-WorldGrid.H = 100
+WorldGrid.W = 480
+WorldGrid.H = 200
 local W, H = WorldGrid.W, WorldGrid.H
 local LAT_TOP, LAT_BOT = 84, -60
 
