@@ -41,8 +41,8 @@ local HUMAN_AURA_COLOR = Color3.fromRGB(255, 220, 0)
 -- ESTADO DEL CLIENTE
 -- ============================================================================
 local state = {
-	w = 480,
-	h = 200,
+	w = 960,
+	h = 400,
 	planet = "EARTH",
 	difficulty = "NORMAL",
 	myId = -1,
@@ -1018,8 +1018,8 @@ end
 -- ============================================================================
 -- PAN & ZOOM (Navegación fluida por el mapa)
 -- ============================================================================
-local BASE_WIDTH = 1680
-local BASE_HEIGHT = 700
+local BASE_WIDTH = 2400
+local BASE_HEIGHT = 1000
 
 local function updateMapTransform()
 	local viewportSize = mapContainer.AbsoluteSize
@@ -1063,7 +1063,7 @@ UserInputService.InputChanged:Connect(function(input)
 		updateMapTransform()
 	elseif input.UserInputType == Enum.UserInputType.MouseWheel then
 		local factor = if input.Position.Z > 0 then 1.15 else 0.85
-		state.zoom = math.clamp(state.zoom * factor, 0.6, 5.0)
+		state.zoom = math.clamp(state.zoom * factor, 0.25, 8.0)
 		updateMapTransform()
 	end
 end)

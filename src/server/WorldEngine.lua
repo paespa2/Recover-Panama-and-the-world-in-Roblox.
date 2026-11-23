@@ -14,11 +14,11 @@ Engine.__index = Engine
 
 local SPAWN_SECONDS = 25
 local WIN_RATIO = 0.65
-local START_TROOPS = 2000
+local START_TROOPS = 3000
 local NUKE_COST = 900
-local NUKE_RADIUS = 9
-local POST_RADIUS = 12
-local PORT_RANGE = 80
+local NUKE_RADIUS = 16
+local POST_RADIUS = 20
+local PORT_RANGE = 140
 
 Engine.COSTS = { City = 500, Port = 400, Post = 350, Silo = 1200 }
 
@@ -336,9 +336,9 @@ end
 function Engine:spawnNation(n, cell)
 	local w, h = self.w, self.h
 	local cx, cy = cell % w, cell // w
-	for dy = -3, 3 do
-		for dx = -3, 3 do
-			if dx * dx + dy * dy <= 10 then
+	for dy = -5, 5 do
+		for dx = -5, 5 do
+			if dx * dx + dy * dy <= 26 then
 				local y = cy + dy
 				if y >= 0 and y < h then
 					local j = y * w + ((cx + dx) % w)
@@ -405,7 +405,7 @@ function Engine:fillQueue(n, atk)
 					buffer.readu8(owner, j) == atk.target
 					and buffer.readu8(land, j) == 1
 					and not seen[j]
-					and #queue < 6000
+					and #queue < 25000
 				then
 					seen[j] = true
 					queue[#queue + 1] = j
