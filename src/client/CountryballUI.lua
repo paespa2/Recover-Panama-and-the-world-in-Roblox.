@@ -1,7 +1,7 @@
 --!strict
 -- CountryballUI.lua
--- Generador de avatares Countryballs en estilo 2D Pixel Art (sin depender de imágenes externas que puedan fallar)
--- Dibuja la bandera pixelada, el borde negro estilo Polandball y los ojos expresivos (determinado, gafas USA, etc.)
+-- Generador 2D Pixel Art de Countryballs para Países, Personajes Históricos (Tesla, Newton, Trump, Escobar, Bolívar),
+-- Dinosaurios Cretácicos y Civilizaciones de Andrómeda.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -21,7 +21,6 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 	container.ClipsDescendants = true
 	container.Parent = parent
 
-	-- Esquinas ligeramente pixeladas (no círculo perfecto sino octágono/bloque pixel)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, math.max(4, math.floor(sizePx * 0.25)))
 	corner.Parent = container
@@ -31,7 +30,6 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 	stroke.Thickness = 2
 	stroke.Parent = container
 
-	-- Diseño de bandera específico para Panamá (4 cuadrantes: Blanco, Rojo, Azul, Blanco)
 	if factionId == "PANAMA" then
 		container.BackgroundColor3 = Color3.fromRGB(245, 247, 250)
 
@@ -49,7 +47,6 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 		topRight.BorderSizePixel = 0
 		topRight.Parent = container
 	else
-		-- Franja inferior secundaria en estilo pixel
 		local stripe = Instance.new("Frame")
 		stripe.Size = UDim2.fromScale(1, 0.42)
 		stripe.Position = UDim2.fromScale(0, 0.58)
@@ -58,7 +55,6 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 		stripe.Parent = container
 	end
 
-	-- Ojos pixelados blancos con borde negro característicos de Countryballs
 	local leftEye = Instance.new("Frame")
 	leftEye.Name = "LeftEye"
 	leftEye.Size = UDim2.fromScale(0.24, 0.26)
@@ -79,7 +75,6 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 	rightEye.ZIndex = 3
 	rightEye.Parent = container
 
-	-- Expresión según el estilo de cada país
 	if faction.eyeStyle == "sunglasses" then
 		leftEye.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 		rightEye.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
@@ -90,6 +85,9 @@ function CountryballUI.CreateCountryball(parent: GuiObject, factionId: string, s
 		bridge.BorderSizePixel = 0
 		bridge.ZIndex = 4
 		bridge.Parent = container
+	elseif faction.eyeStyle == "monocle" then
+		rightEye.BorderColor3 = Color3.fromRGB(241, 196, 15)
+		rightEye.BorderSizePixel = 2
 	elseif faction.eyeStyle == "angry" or faction.eyeStyle == "determined" then
 		local browL = Instance.new("Frame")
 		browL.Size = UDim2.fromScale(0.26, 0.08)

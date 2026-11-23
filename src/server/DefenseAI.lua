@@ -1,8 +1,7 @@
 --!strict
 -- DefenseAI.lua
--- Agente de IA de Defensa Territorial del Jugador + IA Estratégica de Países Rivales
--- Implementa la solicitud del usuario: "ponerle incluso el manejo de IA para las defensas de los países,
--- pero el resto se lo dejo al jugador tanto construir los edificios necesarios como la expansión territorial".
+-- Agente de IA de Defensa Territorial del Jugador + IA Estratégica de Líderes Históricos y Bots
+-- Soporta eras evolutivas (Dinosaurio -> Homo Sapiens -> Tesla -> Andrómeda), Crisis Humanitarias y Comandantes.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -16,6 +15,8 @@ export type RegionState = {
 	owner: string,
 	troops: number,
 	building: string?,
+	unitType: string?, -- Tropa especializada o armamento bélico estacionado
+	crisisId: string?, -- Crisis humanitaria activa en la región
 	shieldUntil: number,
 	underAttackUntil: number,
 	neighbors: { string },
@@ -27,10 +28,14 @@ export type RegionState = {
 
 export type NationEconomy = {
 	factionId: string,
+	commanderId: string,
+	evolutionLevel: number,
 	gold: number,
 	oil: number,
+	science: number,
 	goldPerSec: number,
 	oilPerSec: number,
+	sciencePerSec: number,
 	manpowerPerSec: number,
 	popCap: number,
 	totalTroops: number,
@@ -39,7 +44,6 @@ export type NationEconomy = {
 	isPlayer: boolean,
 }
 
--- Calcula el nivel de amenaza de una provincia propia mirando las tropas enemigas en sus fronteras
 function DefenseAI.CalculateThreatScore(
 	region: RegionState,
 	allRegions: { [string]: RegionState },
@@ -54,7 +58,7 @@ function DefenseAI.CalculateThreatScore(
 		if neighbor and neighbor.owner ~= region.owner then
 			local enemyWeight = neighbor.troops
 			if neighbor.owner ~= "NEUTRAL" then
-				enemyWeight = enemyWeight * 1.35 -- Países rivales activos representan mayor peligro que neutrales
+				enemyWeight = enemyWeight * 1.35
 			else
 				enemyWeight = enemyWeight * 0.35
 			end
@@ -66,28 +70,30 @@ function DefenseAI.CalculateThreatScore(
 		end
 	end
 
-	-- Si la región está recientemente bajo ataque, prioridad máxima para la IA de Defensa
 	if region.underAttackUntil > now then
 		threat = threat * 2.2 + 120
 	end
 
-	-- Si es un centro económico o estratégico (Puerto/Canal, Ciudad, Silo), proteger con más celo
-	if region.building == "Port" or region.building == "City" or region.building == "MissileSilo" then
+	if region.crisisId then
+		threat += 90 -- Priorizar también regiones debilitadas por crisis humanitarias
+	end
+
+	if
+		region.building == "Port"
+		or region.building == "City"
+		or region.building == "ResearchLab"
+		or region.building == "MissileSilo"
+	then
 		threat = threat * 1.25
 	end
 
 	return threat, strongestEnemyId
 end
 
--- Ejecuta la IA de Defensa Automática para una facción (especialmente el país del jugador)
--- NUNCA construye edificios por el jugador ni conquista territorios nuevos sin permiso:
--- Se encarga exclusivamente de:
--- 1) Fuego automático de Búnkeres/Fuertes contra tropas hostiles adyacentes.
--- 2) Redistribución inteligente de guarniciones desde la retaguardia segura hacia las fronteras amenazadas.
--- 3) Intercepción / contra-defensa reactiva cuando una provincia propia está siendo atacada.
 function DefenseAI.StepPlayerCountryDefense(
 	factionId: string,
 	aiMode: string,
+	commanderId: string,
 	allRegions: { [string]: RegionState },
 	now: number,
 	emitActionCallback: (
@@ -98,7 +104,9 @@ function DefenseAI.StepPlayerCountryDefense(
 		summary: string
 	) -> ()
 )
-	-- 1. FUEGO AUTOMÁTICO DE BÚNKERES / FUERTES (Activo en TODOS los modos, incluso MANUAL)
+	local turretMultiplier = if commanderId == "TESLA" then 1.85 else 1.0
+
+	-- 1. FUEGO AUTOMÁTICO DE BÚNKERES / TORRETAS TESLA IA
 	for _, region in pairs(allRegions) do
 		if region.owner == factionId and region.building == "Fortress" then
 			local bestTarget: RegionState? = nil
@@ -117,7 +125,8 @@ function DefenseAI.StepPlayerCountryDefense(
 			end
 
 			if bestTarget then
-				local turretDamage = math.clamp(math.floor(region.troops * 0.08) + 8, 6, 35)
+				local baseDmg = math.clamp(math.floor(region.troops * 0.08) + 8, 6, 38)
+				local turretDamage = math.floor(baseDmg * turretMultiplier)
 				bestTarget.troops = math.max(5, bestTarget.troops - turretDamage)
 				emitActionCallback(
 					"AI_TURRET",
@@ -125,7 +134,7 @@ function DefenseAI.StepPlayerCountryDefense(
 					bestTarget.id,
 					turretDamage,
 					string.format(
-						"🛡️ Búnker IA en %s bombardeó a %s (-%d)",
+						"🛡️ Búnker IA en %s electrocutó a %s (-%d)",
 						region.name,
 						bestTarget.name,
 						turretDamage
@@ -146,8 +155,7 @@ function DefenseAI.StepPlayerCountryDefense(
 	for _, region in pairs(allRegions) do
 		if region.owner == factionId then
 			table.insert(ownedRegions, region)
-			local threatScore = DefenseAI.CalculateThreatScore(region, allRegions, now)
-			threats[region.id] = threatScore
+			threats[region.id] = DefenseAI.CalculateThreatScore(region, allRegions, now)
 		end
 	end
 
@@ -155,14 +163,13 @@ function DefenseAI.StepPlayerCountryDefense(
 		return
 	end
 
-	-- Buscar una provincia interior o poco amenazada con superávit de tropas para reforzar la frontera más crítica
 	for _, donor in ipairs(ownedRegions) do
 		local donorThreat = threats[donor.id] or 0
 		local minReserve = if aiMode == "FORTIFY" then 30 else 45
 
 		if donor.troops > minReserve + 25 then
 			local bestBorderNeighbor: RegionState? = nil
-			local highestThreatRatio = 1.25 -- Necesita al menos 25% más amenaza que el donante
+			local highestThreatRatio = 1.25
 
 			for _, neighborId in ipairs(donor.neighbors) do
 				local neighbor = allRegions[neighborId]
@@ -188,7 +195,7 @@ function DefenseAI.StepPlayerCountryDefense(
 						bestBorderNeighbor.id,
 						transferAmount,
 						string.format(
-							"🤖 IA Defensa reforzó frontera %s desde %s (+%d)",
+							"🤖 IA Defensa reforzó %s desde %s (+%d)",
 							bestBorderNeighbor.name,
 							donor.name,
 							transferAmount
@@ -200,7 +207,7 @@ function DefenseAI.StepPlayerCountryDefense(
 	end
 end
 
--- IA para los Países Rivales (Bots que sí se expanden, construyen y defienden sus fronteras)
+-- IA para Naciones y Líderes Históricos Rivales (Tesla, Newton, Trump, Escobar, Gengis Kan, Andrómeda, Dinosaurios)
 function DefenseAI.StepRivalBotNation(
 	factionId: string,
 	economy: NationEconomy,
@@ -208,10 +215,8 @@ function DefenseAI.StepRivalBotNation(
 	now: number,
 	executeAttackCallback: (fromId: string, toId: string, ratio: number, isAi: boolean) -> ()
 )
-	-- 1. Primero ejecuta la misma IA de defensa territorial para proteger sus fronteras
-	DefenseAI.StepPlayerCountryDefense(factionId, "SMART", allRegions, now, function() end)
+	DefenseAI.StepPlayerCountryDefense(factionId, "SMART", economy.commanderId, allRegions, now, function() end)
 
-	-- 2. Construcciones de los bots rivales si tienen suficiente oro
 	local owned: { RegionState } = {}
 	for _, region in pairs(allRegions) do
 		if region.owner == factionId then
@@ -223,6 +228,15 @@ function DefenseAI.StepRivalBotNation(
 		return
 	end
 
+	-- Evolución científica automática de los bots si acumulan suficiente Ciencia
+	local nextEra = GameConfig.EVOLUTION_STAGES[economy.evolutionLevel + 1]
+	if nextEra and economy.science >= nextEra.costScience and economy.gold >= nextEra.costGold then
+		economy.science -= nextEra.costScience
+		economy.gold -= nextEra.costGold
+		economy.evolutionLevel += 1
+	end
+
+	-- Construcciones de los bots
 	if economy.gold >= 160 then
 		for _, region in ipairs(owned) do
 			if not region.building then
@@ -230,7 +244,9 @@ function DefenseAI.StepRivalBotNation(
 				local choice = "City"
 				if threat > 140 then
 					choice = "Fortress"
-				elseif math.random() < 0.45 then
+				elseif math.random() < 0.30 then
+					choice = "ResearchLab"
+				elseif math.random() < 0.50 then
 					choice = "Barracks"
 				end
 				local bDef = GameConfig.BUILDINGS[choice]
@@ -244,11 +260,11 @@ function DefenseAI.StepRivalBotNation(
 		end
 	end
 
-	-- 3. Oportunidad de ataque táctico de los países rivales (si superan claramente a un vecino)
+	-- Ataques tácticos de los líderes históricos
 	for _, region in ipairs(owned) do
 		if region.troops >= 95 then
 			local weakestTarget: RegionState? = nil
-			local bestAdvantage = 1.38
+			local bestAdvantage = 1.36
 
 			for _, neighborId in ipairs(region.neighbors) do
 				local neighbor = allRegions[neighborId]
@@ -269,7 +285,7 @@ function DefenseAI.StepRivalBotNation(
 				end
 			end
 
-			if weakestTarget and math.random() < 0.35 then
+			if weakestTarget and math.random() < 0.38 then
 				executeAttackCallback(region.id, weakestTarget.id, 0.55, true)
 				break
 			end
