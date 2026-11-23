@@ -1704,8 +1704,24 @@ function WorldGrid.BuildBase(planetId, land)
 		for x = 0, W - 1 do
 			local i = y * W + x
 			local r, g, b
-			local shade = 1 + math.noise(x * 0.55 + 0.3, y * 0.55 + 0.7, 1.7) * 0.07
+
+			-- Sombreado de relieve 3D direccional (Sol desde el Noroeste)
+			local shade = 1.0
 			if buffer.readu8(land, i) == 1 then
+				local leftX = if x == 0 then W - 1 else x - 1
+				local rightX = if x == W - 1 then 0 else x + 1
+				local upY = math.max(0, y - 1)
+				local downY = math.min(H - 1, y + 1)
+
+				local hL = math.noise(leftX * 0.1, y * 0.1, 4.3)
+				local hR = math.noise(rightX * 0.1, y * 0.1, 4.3)
+				local hU = math.noise(x * 0.1, upY * 0.1, 4.3)
+				local hD = math.noise(x * 0.1, downY * 0.1, 4.3)
+
+				local dz_dx = (hR - hL) * 0.5
+				local dz_dy = (hD - hU) * 0.5
+				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
+
 				if def.kind == "earth" or def.kind == "pangea" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
@@ -1743,14 +1759,10 @@ function WorldGrid.BuildBase(planetId, land)
 				elseif near2 then
 					c = def.mid
 				end
-				r, g, b = c[1] * shade, c[2] * shade, c[3] * shade
-				if def.kind == "galaxy" then
-					local star = math.noise(x * 1.9 + 7, y * 1.9 + 3, 8.8)
-					if star > 0.62 then
-						r, g, b = 210, 210, 255
-					end
-				end
+				local oceanShade = 1.0 + math.noise(x * 0.1, y * 0.1, 1.7) * 0.05
+				r, g, b = c[1] * oceanShade, c[2] * oceanShade, c[3] * oceanShade
 			end
+
 			local o = i * 3
 			buffer.writeu8(base, o, math.clamp(math.floor(r), 0, 255))
 			buffer.writeu8(base, o + 1, math.clamp(math.floor(g), 0, 255))
