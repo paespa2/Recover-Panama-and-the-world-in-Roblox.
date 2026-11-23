@@ -35,7 +35,7 @@ local WorldNotice = remote("WorldNotice")
 local WorldCommand = remote("WorldCommand")
 
 local engine = nil
-local config = { planet = "EARTH", bots = 40, difficulty = "NORMAL" }
+local config = { planet = "EARTH", bots = 40, difficulty = "NORMAL", mode = "FREE" }
 local humanNations = {} -- [Player] = nación
 local lastCommand = {}
 local endedAt = nil
@@ -55,6 +55,7 @@ local function sendInit(player)
 		myId = n.id,
 		stats = engine:getStats(),
 		difficulty = engine.difficultyName,
+		mode = engine.mode,
 	})
 end
 
@@ -72,7 +73,7 @@ end
 
 local function newMatch(cfg)
 	config = cfg
-	engine = Engine.new(cfg.planet, cfg.bots, cfg.difficulty)
+	engine = Engine.new(cfg.planet, cfg.bots, cfg.difficulty, cfg.mode)
 	endedAt = nil
 	humanNations = {}
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -92,7 +93,9 @@ local function sanitize(cmd)
 		difficulty = "NORMAL"
 	end
 	local bots = math.clamp(math.floor(tonumber(cmd.bots) or 40), 0, 90)
-	return { planet = planet, bots = bots, difficulty = difficulty }
+	-- El modo PAÍSES solo existe en la Tierra
+	local mode = if cmd.mode == "COUNTRIES" and planet == "EARTH" then "COUNTRIES" else "FREE"
+	return { planet = planet, bots = bots, difficulty = difficulty, mode = mode }
 end
 
 local function countHumans()
@@ -218,7 +221,12 @@ RunService.Heartbeat:Connect(function(dt)
 
 	if statAcc >= 1 then
 		statAcc = 0
-		WorldStats:FireAllClients(engine:getStats())
+		local stats = engine:getStats()
+		local allPlayers = Players:GetPlayers()
+		stats.players = #allPlayers
+		stats.maxPlayers = Players.MaxPlayers
+		stats.hostId = if allPlayers[1] then allPlayers[1].UserId else 0 -- el anfitrión crea/reinicia la partida
+		WorldStats:FireAllClients(stats)
 	end
 
 	if meAcc >= 0.5 then

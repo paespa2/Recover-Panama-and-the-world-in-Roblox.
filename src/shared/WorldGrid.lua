@@ -1688,8 +1688,33 @@ local function earthLandColor(x, y)
 	return r, g, b
 end
 
+-- Imagen satelital real (generada por tools/fetch_satellite.py -> TerrainData.lua). Si no existe, se usa el relieve procedural.
+local function loadSatellite()
+	local mod = script.Parent:FindFirstChild("TerrainData")
+	if not mod then
+		return nil
+	end
+	local okReq, data = pcall(require, mod)
+	if not okReq then
+		warn("[WorldGrid] TerrainData no se pudo cargar:", data)
+		return nil
+	end
+	local okBuf, buf = pcall(data.GetBuffer)
+	if okBuf and buf and buffer.len(buf) == W * H * 3 then
+		return buf
+	end
+	warn("[WorldGrid] TerrainData invalido:", buf)
+	return nil
+end
+
 function WorldGrid.BuildBase(planetId, land)
 	local def = WorldGrid.PLANETS[planetId] or WorldGrid.PLANETS.EARTH
+	if def.kind == "earth" then
+		local satellite = loadSatellite()
+		if satellite then
+			return satellite
+		end
+	end
 	local base = buffer.create(W * H * 3)
 
 	local function isLand(x, y)

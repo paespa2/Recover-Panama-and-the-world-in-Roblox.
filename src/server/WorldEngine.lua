@@ -8,6 +8,16 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WorldGrid = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WorldGrid"))
+local BotAI = require(script.Parent:WaitForChild("BotAI"))
+
+-- Países reales por celda (generado por tools/build_countries.py). Si falta, el modo PAÍSES no estará disponible.
+local okCountries, CountryData = pcall(function()
+	return require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CountryData", 5))
+end)
+if not okCountries then
+	CountryData = nil
+	warn("[WorldEngine] CountryData no disponible: el modo Países vs Países queda desactivado")
+end
 
 local Engine = {}
 Engine.__index = Engine
@@ -21,6 +31,7 @@ local POST_RADIUS = 20
 local PORT_RANGE = 140
 
 Engine.COSTS = { City = 500, Port = 400, Post = 350, Silo = 1200 }
+Engine.NUKE_COST = NUKE_COST
 
 local DIFFICULTY = {
 	EASY = { think = 5.0, maxAttacks = 1, minRatio = 0.2, maxRatio = 0.35, growth = 0.8, edge = 1.4 },
@@ -147,7 +158,7 @@ end
 -- ============================================================================
 -- CONSTRUCCIÓN
 -- ============================================================================
-function Engine.new(planetId, botCount, difficulty)
+function Engine.new(planetId, botCount, difficulty, mode)
 	local grid = WorldGrid.Generate(planetId)
 	local self = setmetatable({}, Engine)
 	self.planetId = if WorldGrid.PLANETS[planetId] then planetId else "EARTH"
@@ -175,6 +186,13 @@ function Engine.new(planetId, botCount, difficulty)
 	self.rng = Random.new()
 	self._nb = {}
 
+	self.mode = "FREE"
+	if mode == "COUNTRIES" and self.planetId == "EARTH" and CountryData then
+		self.mode = "COUNTRIES"
+		self:initCountries()
+		return self
+	end
+
 	local names = table.clone(BOT_NAMES)
 	for i = #names, 2, -1 do
 		local j = self.rng:NextInteger(1, i)
@@ -198,6 +216,7 @@ function Engine:addNation(name, color, isBot, player)
 		isBot = isBot,
 		player = player,
 		userId = player and player.UserId or nil,
+		playerName = player and player.DisplayName or nil,
 		troops = 0,
 		gold = if isBot then 200 else 700,
 		cells = 0,
@@ -212,6 +231,8 @@ function Engine:addNation(name, color, isBot, player)
 		defenseAI = true,
 		attackedBy = {},
 		thinkTimer = self.rng:NextNumber() * 4,
+		persona = if isBot then BotAI.assign(self.rng, name) else nil,
+		lastNuke = -999,
 	}
 	self.nations[id] = n
 	table.insert(self.list, n)
@@ -291,7 +312,23 @@ function Engine:setOwner(i, newId)
 		self.nations[old].cells -= 1
 	end
 	if newId ~= 0 then
-		self.nations[newId].cells += 1
+		local nn = self.nations[newId]
+		nn.cells += 1
+		-- Caja envolvente de la nación: limita los escaneos de la IA y de los ataques
+		local x = i % self.w
+		local y = i // self.w
+		if not nn.bx0 or x < nn.bx0 then
+			nn.bx0 = x
+		end
+		if not nn.bx1 or x > nn.bx1 then
+			nn.bx1 = x
+		end
+		if not nn.by0 or y < nn.by0 then
+			nn.by0 = y
+		end
+		if not nn.by1 or y > nn.by1 then
+			nn.by1 = y
+		end
 	end
 	buffer.writeu8(self.owner, i, newId)
 	table.insert(self.changes, i)
@@ -370,7 +407,149 @@ function Engine:autoSpawn(n, strict)
 	return false
 end
 
+-- ============================================================================
+-- MODO PAÍSES VS PAÍSES: cada país real es una nación con su territorio
+-- ============================================================================
+-- Matiz base por continente: África, Antártida, Asia, Europa, Norteamérica, Oceanía, Sudamérica
+local CONTINENT_HUE = { 0.08, 0.55, 0.0, 0.58, 0.33, 0.8, 0.15 }
+
+function Engine:initCountries()
+	local ids = CountryData.GetBuffer()
+	local w = self.w
+	local byCountry = {}
+	for _, c in ipairs(CountryData.countries) do
+		local cid, name, iso, cont, pop = c[1], c[2], c[3], c[4], c[5]
+		local hue = (CONTINENT_HUE[cont] or 0.5) + (((cid * 37) % 100) / 100 - 0.5) * 0.08
+		local color = Color3.fromHSV(hue % 1, 0.42 + ((cid * 7) % 5) * 0.04, 0.6 + ((cid * 3) % 4) * 0.05)
+		local n = self:addNation(name, color, true, nil)
+		n.countryId = cid
+		n.continent = cont
+		n.iso = iso
+		n.pop = pop
+		byCountry[cid] = n
+	end
+
+	-- Territorio: toda la tierra de cada país (según la máscara de tierra del motor)
+	local sx, sy, cnt = {}, {}, {}
+	for i = 0, self.size - 1 do
+		local cid = buffer.readu8(ids, i)
+		if cid ~= 0 and buffer.readu8(self.land, i) == 1 then
+			local n = byCountry[cid]
+			if n then
+				self:setOwner(i, n.id)
+				sx[cid] = (sx[cid] or 0) + i % w
+				sy[cid] = (sy[cid] or 0) + i // w
+				cnt[cid] = (cnt[cid] or 0) + 1
+			end
+		end
+	end
+
+	-- Capital: la celda propia más cercana al centroide del país
+	local bestD = {}
+	for i = 0, self.size - 1 do
+		local o = buffer.readu8(self.owner, i)
+		if o ~= 0 then
+			local n = self.nations[o]
+			local cid = n.countryId
+			local c = cnt[cid]
+			if c then
+				local dx = i % w - sx[cid] / c
+				local dy = i // w - sy[cid] / c
+				local d = dx * dx + dy * dy
+				if not bestD[cid] or d < bestD[cid] then
+					bestD[cid] = d
+					n.capital = i
+				end
+			end
+		end
+	end
+
+	for _, n in ipairs(self.list) do
+		n.spawned = true
+		n.alive = n.cells > 0
+		n.troops = math.clamp(1500 + n.cells * 5, 1500, 60000)
+	end
+	self.changes = {} -- el estado inicial viaja en el snapshot, no como diferencias
+end
+
+-- Un jugador toma el control de un país (sus celdas pasan a su nación)
+function Engine:transferCountry(c, n)
+	local w = self.w
+	local x0, x1 = c.bx0 or 0, c.bx1 or (w - 1)
+	local y0, y1 = c.by0 or 0, c.by1 or (self.h - 1)
+	for y = y0, y1 do
+		for x = x0, x1 do
+			local i = y * w + x
+			if buffer.readu8(self.owner, i) == c.id then
+				self:setOwner(i, n.id)
+			end
+		end
+	end
+	c.attacks = {}
+	c.alive = false
+	n.countryId = c.countryId
+	n.continent = c.continent
+	n.iso = c.iso
+	n.pop = c.pop
+	n.capital = c.capital
+	n.troops = c.troops
+	n.attacks = {}
+	n.spawned = true
+	n.alive = n.cells > 0
+	n.name = string.format("%s (%s)", c.name, n.name)
+	c.capital = nil
+end
+
+function Engine:claimCountry(n, cell)
+	if n.alive then
+		return false, "Ya estás en el mapa"
+	end
+	if self.phase == "ENDED" then
+		return false, "La partida terminó"
+	end
+	local id = buffer.readu8(self.owner, cell)
+	local c = if id ~= 0 then self.nations[id] else nil
+	if not c or not c.countryId or not c.alive then
+		return false, "Elige un país: haz clic sobre su territorio"
+	end
+	if not c.isBot then
+		return false, "Ese país ya tiene jugador"
+	end
+	if self.phase ~= "SPAWN" and c.cells > 800 then
+		return false, "La guerra ya empezó: elige un país pequeño (menos de 800 celdas)"
+	end
+	local cname = c.name
+	self:transferCountry(c, n)
+	self:notify(n.userId, "🌍 ¡Gobiernas " .. cname .. "! Haz clic en territorio vecino para expandirte")
+	return true
+end
+
+-- Asigna un país al azar (preferiblemente mediano) a quien no eligió ninguno
+function Engine:autoClaim(n)
+	local pool, any = {}, {}
+	for _, c in ipairs(self.list) do
+		if c.countryId and c.isBot and c.alive then
+			any[#any + 1] = c
+			if c.cells >= 25 and c.cells <= 4000 then
+				pool[#pool + 1] = c
+			end
+		end
+	end
+	local src = if #pool > 0 then pool else any
+	if #src == 0 then
+		return false
+	end
+	local c = src[self.rng:NextInteger(1, #src)]
+	local cname = c.name
+	self:transferCountry(c, n)
+	self:notify(n.userId, "📍 País asignado automáticamente: " .. cname)
+	return true
+end
+
 function Engine:setSpawn(n, cell)
+	if self.mode == "COUNTRIES" then
+		return self:claimCountry(n, cell)
+	end
 	if n.alive then
 		return false, "Ya estás en el mapa"
 	end
@@ -396,19 +575,25 @@ function Engine:fillQueue(n, atk)
 	local nb = self._nb
 	local seen = {}
 	local queue = atk.queue
-	for i = 0, self.size - 1 do
-		if buffer.readu8(owner, i) == n.id then
-			local cnt = self:neighbors(i, nb)
-			for q = 1, cnt do
-				local j = nb[q]
-				if
-					buffer.readu8(owner, j) == atk.target
-					and buffer.readu8(land, j) == 1
-					and not seen[j]
-					and #queue < 25000
-				then
-					seen[j] = true
-					queue[#queue + 1] = j
+	local w, h = self.w, self.h
+	local x0, x1 = n.bx0 or 0, n.bx1 or (w - 1)
+	local y0, y1 = n.by0 or 0, n.by1 or (h - 1)
+	for y = y0, y1 do
+		for x = x0, x1 do
+			local i = y * w + x
+			if buffer.readu8(owner, i) == n.id then
+				local cnt = self:neighbors(i, nb)
+				for q = 1, cnt do
+					local j = nb[q]
+					if
+						buffer.readu8(owner, j) == atk.target
+						and buffer.readu8(land, j) == 1
+						and not seen[j]
+						and #queue < 25000
+					then
+						seen[j] = true
+						queue[#queue + 1] = j
+					end
 				end
 			end
 		end
@@ -749,93 +934,8 @@ end
 -- ============================================================================
 -- BOTS
 -- ============================================================================
-function Engine:census(n)
-	local owner, land = self.owner, self.land
-	local nb = self._nb
-	local counts = {}
-	local sample = {}
-	local seenOwned = 0
-	for i = 0, self.size - 1 do
-		if buffer.readu8(owner, i) == n.id then
-			seenOwned += 1
-			if #sample < 10 then
-				sample[#sample + 1] = i
-			elseif self.rng:NextInteger(1, seenOwned) <= 10 then
-				sample[self.rng:NextInteger(1, 10)] = i
-			end
-			local cnt = self:neighbors(i, nb)
-			for q = 1, cnt do
-				local j = nb[q]
-				if buffer.readu8(land, j) == 1 then
-					local o = buffer.readu8(owner, j)
-					if o ~= n.id then
-						counts[o] = (counts[o] or 0) + 1
-					end
-				end
-			end
-		end
-	end
-	return counts, sample
-end
-
-function Engine:botLanding(n, sample)
-	if #sample == 0 then
-		return
-	end
-	local w, h = self.w, self.h
-	for _ = 1, 8 do
-		local c = sample[self.rng:NextInteger(1, #sample)]
-		local cx, cy = c % w, c // w
-		local angle = self.rng:NextNumber() * math.pi * 2
-		local dist = 6 + self.rng:NextNumber() * 22
-		local tx = (cx + math.floor(math.cos(angle) * dist)) % w
-		local ty = cy + math.floor(math.sin(angle) * dist)
-		if ty >= 1 and ty < h - 1 then
-			local j = ty * w + tx
-			if buffer.readu8(self.land, j) == 1 and buffer.readu8(self.owner, j) == 0 then
-				self:landing(n, j, 350)
-				return
-			end
-		end
-	end
-end
-
 function Engine:botThink(n)
-	local d = self.diff
-	if n.troops < 250 or #n.attacks >= d.maxAttacks then
-		return
-	end
-	local counts, sample = self:census(n)
-	local hasEnemy = false
-	for id in pairs(counts) do
-		if id ~= 0 then
-			hasEnemy = true
-		end
-	end
-	local target = nil
-	if (counts[0] or 0) > 0 and (not hasEnemy or self.rng:NextNumber() < 0.7) then
-		target = 0
-	elseif hasEnemy then
-		local best = math.huge
-		for id in pairs(counts) do
-			if id ~= 0 then
-				local en = self.nations[id]
-				if en and en.alive and n.troops > en.troops * d.edge then
-					local score = en.troops * (0.6 + self.rng:NextNumber() * 0.8)
-					if score < best then
-						best = score
-						target = id
-					end
-				end
-			end
-		end
-	end
-	if target then
-		local ratio = d.minRatio + (d.maxRatio - d.minRatio) * self.rng:NextNumber()
-		self:launchAttack(n, target, ratio)
-	elseif next(counts) == nil and n.troops > 700 then
-		self:botLanding(n, sample)
-	end
+	BotAI.think(self, n)
 end
 
 -- ============================================================================
@@ -844,8 +944,12 @@ end
 function Engine:beginRunning()
 	for _, n in ipairs(self.list) do
 		if not n.isBot and not n.spawned then
-			self:autoSpawn(n, false)
-			self:notify(n.userId, "📍 Capital asignada automáticamente")
+			if self.mode == "COUNTRIES" then
+				self:autoClaim(n)
+			else
+				self:autoSpawn(n, false)
+				self:notify(n.userId, "📍 Capital asignada automáticamente")
+			end
 		end
 	end
 	self.phase = "BATTLE"
@@ -936,13 +1040,27 @@ function Engine:tick(dt)
 			self:processAttacks(n)
 			if n.isBot then
 				n.thinkTimer -= dt
-				if n.thinkTimer <= 0 then
-					n.thinkTimer = self.diff.think * (0.7 + self.rng:NextNumber() * 0.6)
-					self:botThink(n)
-				end
 			end
 		end
 	end
+
+	-- Presupuesto de "pensadas" por tick (los escaneos del mapa son costosos); el cursor rota para ser justo
+	local budget = 4
+	local total = #self.list
+	local cursor = self.thinkCursor or 0
+	for k = 1, total do
+		local n = self.list[((cursor + k - 1) % total) + 1]
+		if n.alive and n.isBot and n.thinkTimer <= 0 then
+			n.thinkTimer = self.diff.think * (0.7 + self.rng:NextNumber() * 0.6)
+			self:botThink(n)
+			budget -= 1
+			if budget <= 0 then
+				cursor = (cursor + k) % total
+				break
+			end
+		end
+	end
+	self.thinkCursor = cursor
 
 	self.econAccum += dt
 	if self.econAccum >= 1 then
@@ -988,6 +1106,9 @@ function Engine:getRoster()
 			g = math.floor(c.G * 255 + 0.5),
 			b = math.floor(c.B * 255 + 0.5),
 			bot = n.isBot,
+			persona = n.persona,
+			countryId = n.countryId,
+			continent = n.continent,
 			capital = n.capital,
 			cells = n.cells,
 		})
@@ -1015,7 +1136,24 @@ function Engine:getStats()
 	table.sort(top, function(a, b)
 		return a.cells > b.cells
 	end)
+	-- El cliente solo muestra el top 7: con ~164 países vivos no hace falta enviar la lista completa
+	for k = #top, 11, -1 do
+		top[k] = nil
+	end
+
+	-- Países ya elegidos por jugadores (para la lista de selección del lobby)
+	local taken = nil
+	if self.mode == "COUNTRIES" then
+		taken = {}
+		for _, n in ipairs(self.list) do
+			if not n.isBot and n.countryId then
+				table.insert(taken, { cid = n.countryId, name = n.playerName or n.name, nid = n.id })
+			end
+		end
+	end
 	return {
+		mode = self.mode,
+		taken = taken,
 		phase = self.phase,
 		spawnTimer = math.max(0, math.ceil(self.spawnTimer)),
 		winner = self.winner,

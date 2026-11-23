@@ -18,6 +18,24 @@ local WorldGrid = require(Shared:WaitForChild("WorldGrid"))
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
+-- Oculta lo que el juego no usa de la interfaz por defecto de Roblox (el logo y el menú de Roblox no se pueden quitar)
+task.spawn(function()
+	local StarterGui = game:GetService("StarterGui")
+	for _ = 1, 10 do
+		local ok = pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, false)
+		end)
+		if ok then
+			break
+		end
+		task.wait(0.5) -- los CoreGui pueden tardar en registrarse
+	end
+end)
+
 local folder = ReplicatedStorage:WaitForChild("WorldRemotes", 15)
 if not folder then
 	warn("WorldRemotes no encontrado")
@@ -47,6 +65,7 @@ local state = {
 	w = 960,
 	h = 400,
 	planet = "EARTH",
+	mode = "FREE", -- FREE o COUNTRIES (Países vs Países)
 	difficulty = "NORMAL",
 	myId = -1,
 	land = nil,
@@ -82,6 +101,13 @@ local state = {
 	editableImage = nil,
 	pixelBuffer = nil,
 	initialized = false,
+	-- Respaldo por bloques cuando EditableImage no está disponible en la experiencia
+	blockMode = false,
+	blocks = nil,
+	blockLayer = nil,
+	blockW = 0,
+	blockH = 0,
+	dirtyBlocks = {},
 }
 
 -- ============================================================================
@@ -176,7 +202,8 @@ topStroke.Parent = topBar
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "TitleLabel"
 titleLabel.Size = UDim2.new(0, 280, 1, 0)
-titleLabel.Position = UDim2.fromOffset(16, 0)
+-- Deja libre la esquina superior izquierda: ahí Roblox dibuja su logo, menú y botones por defecto
+titleLabel.Position = UDim2.fromOffset(276, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBlack
 titleLabel.Text = "🌍 RECUPERAR PANAMÁ Y EL MUNDO"
@@ -225,7 +252,7 @@ btnLobby.Position = UDim2.new(1, -16, 0.5, 0)
 btnLobby.Size = UDim2.fromOffset(130, 34)
 btnLobby.BackgroundColor3 = Color3.fromRGB(40, 70, 120)
 btnLobby.Font = Enum.Font.GothamBold
-btnLobby.Text = "⚙️ Mapas & Modos"
+btnLobby.Text = "⚙️ Menú y Modos"
 btnLobby.TextColor3 = Color3.fromRGB(255, 255, 255)
 btnLobby.TextSize = 12
 btnLobby.BorderSizePixel = 0
@@ -600,200 +627,664 @@ local function showToast(text, color)
 end
 
 -- ============================================================================
--- MODAL DE LOBBY (Mapas de la Tierra, Planetas, Andrómeda, Dificultad, Bots)
+-- PANTALLA DE LOBBY: modo de juego, mapa y dificultad.
+-- Se muestra al entrar y se reabre desde "☰ Menú". El anfitrión (primer jugador) crea la partida;
+-- los demás jugadores del servidor entran a la partida en curso.
 -- ============================================================================
-local modalLobby = Instance.new("Frame")
-modalLobby.Name = "ModalLobby"
-modalLobby.AnchorPoint = Vector2.new(0.5, 0.5)
-modalLobby.Position = UDim2.fromScale(0.5, 0.5)
-modalLobby.Size = UDim2.fromOffset(600, 420)
-modalLobby.BackgroundColor3 = Color3.fromRGB(18, 24, 38)
-modalLobby.BorderSizePixel = 0
-modalLobby.Visible = false
-modalLobby.ZIndex = 40
-modalLobby.Parent = root
-
-local modalCorner = Instance.new("UICorner")
-modalCorner.CornerRadius = UDim.new(0, 10)
-modalCorner.Parent = modalLobby
-
-local modalStroke = Instance.new("UIStroke")
-modalStroke.Color = Color3.fromRGB(0, 200, 255)
-modalStroke.Thickness = 2
-modalStroke.Parent = modalLobby
-
-local modalTitle = Instance.new("TextLabel")
-modalTitle.Size = UDim2.new(1, -40, 0, 40)
-modalTitle.Position = UDim2.fromOffset(20, 10)
-modalTitle.BackgroundTransparency = 1
-modalTitle.Font = Enum.Font.GothamBlack
-modalTitle.Text = "⚙️ CONFIGURACIÓN DE PARTIDA Y MAPAS"
-modalTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
-modalTitle.TextSize = 16
-modalTitle.TextXAlignment = Enum.TextXAlignment.Left
-modalTitle.ZIndex = 41
-modalTitle.Parent = modalLobby
-
-local btnCloseModal = Instance.new("TextButton")
-btnCloseModal.AnchorPoint = Vector2.new(1, 0)
-btnCloseModal.Position = UDim2.new(1, -16, 0, 14)
-btnCloseModal.Size = UDim2.fromOffset(30, 30)
-btnCloseModal.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-btnCloseModal.Font = Enum.Font.GothamBlack
-btnCloseModal.Text = "✕"
-btnCloseModal.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnCloseModal.TextSize = 14
-btnCloseModal.ZIndex = 42
-btnCloseModal.Parent = modalLobby
-
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
-closeCorner.Parent = btnCloseModal
-
-btnCloseModal.MouseButton1Click:Connect(function()
-	modalLobby.Visible = false
-end)
-btnLobby.MouseButton1Click:Connect(function()
-	modalLobby.Visible = not modalLobby.Visible
-end)
-
--- Selector de Planetas / Mapas
 local selPlanet = "EARTH"
 local selBots = 40
 local selDiff = "NORMAL"
+local selMode = "COUNTRIES"
 
-local planetLabel = Instance.new("TextLabel")
-planetLabel.Size = UDim2.new(1, -40, 0, 24)
-planetLabel.Position = UDim2.fromOffset(20, 60)
-planetLabel.BackgroundTransparency = 1
-planetLabel.Font = Enum.Font.GothamBold
-planetLabel.Text = "Selecciona Mapa o Mundo:"
-planetLabel.TextColor3 = Color3.fromRGB(200, 220, 245)
-planetLabel.TextSize = 13
-planetLabel.TextXAlignment = Enum.TextXAlignment.Left
-planetLabel.ZIndex = 41
-planetLabel.Parent = modalLobby
+local COLOR_CARD = Color3.fromRGB(26, 36, 56)
+local COLOR_CARD_SEL = Color3.fromRGB(24, 70, 96)
+local COLOR_CHIP = Color3.fromRGB(30, 42, 64)
+local COLOR_ACCENT = Color3.fromRGB(0, 200, 255)
 
-local planetButtons = {}
-local planetList = {
-	{ id = "EARTH", name = "🌍 Tierra (Continentes Reales)" },
-	{ id = "PANGEA", name = "🦕 Pangea (Era Dinosaurios)" },
-	{ id = "MARS", name = "🔴 Marte (Colonias)" },
-	{ id = "MOON", name = "🌕 Luna (Bases Lunares)" },
-	{ id = "VENUS", name = "🪐 Venus (Volcánico)" },
-	{ id = "ANDROMEDA", name = "🌌 Galaxia Andrómeda" },
-}
+local lobbyScreen = Instance.new("Frame")
+lobbyScreen.Name = "LobbyScreen"
+lobbyScreen.Size = UDim2.fromScale(1, 1)
+lobbyScreen.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
+lobbyScreen.BackgroundTransparency = 0.1
+lobbyScreen.BorderSizePixel = 0
+lobbyScreen.Active = true -- bloquea los clics hacia el mapa
+lobbyScreen.ZIndex = 60
+lobbyScreen.Parent = root
 
-for i, pInfo in ipairs(planetList) do
-	local col = (i - 1) % 2
-	local row = math.floor((i - 1) / 2)
-	local btn = Instance.new("TextButton")
-	btn.Name = "Planet_" .. pInfo.id
-	btn.Size = UDim2.fromOffset(270, 36)
-	btn.Position = UDim2.fromOffset(20 + col * 285, 90 + row * 44)
-	btn.BackgroundColor3 = (pInfo.id == selPlanet) and Color3.fromRGB(0, 150, 220) or Color3.fromRGB(30, 40, 60)
-	btn.BorderSizePixel = 0
-	btn.Font = Enum.Font.GothamBold
-	btn.Text = pInfo.name
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.TextSize = 12
-	btn.ZIndex = 42
-	btn.Parent = modalLobby
+local lobbyCard = Instance.new("Frame")
+lobbyCard.Name = "LobbyCard"
+lobbyCard.AnchorPoint = Vector2.new(0.5, 0.5)
+lobbyCard.Position = UDim2.fromScale(0.5, 0.5)
+lobbyCard.Size = UDim2.fromOffset(920, 600)
+lobbyCard.BackgroundColor3 = Color3.fromRGB(14, 20, 34)
+lobbyCard.BorderSizePixel = 0
+lobbyCard.ZIndex = 61
+lobbyCard.Parent = lobbyScreen
 
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, 6)
-	c.Parent = btn
+local lobbyCardCorner = Instance.new("UICorner")
+lobbyCardCorner.CornerRadius = UDim.new(0, 16)
+lobbyCardCorner.Parent = lobbyCard
 
-	planetButtons[pInfo.id] = btn
+local lobbyCardStroke = Instance.new("UIStroke")
+lobbyCardStroke.Color = COLOR_ACCENT
+lobbyCardStroke.Thickness = 2
+lobbyCardStroke.Parent = lobbyCard
 
-	btn.MouseButton1Click:Connect(function()
-		selPlanet = pInfo.id
-		for pid, b in pairs(planetButtons) do
-			b.BackgroundColor3 = (pid == selPlanet) and Color3.fromRGB(0, 150, 220) or Color3.fromRGB(30, 40, 60)
-		end
-	end)
+-- Escala la tarjeta para que quepa en pantallas pequeñas (móviles, ventanas reducidas)
+local lobbyScale = Instance.new("UIScale")
+lobbyScale.Parent = lobbyCard
+local function fitLobby()
+	local vs = root.AbsoluteSize
+	if vs.X > 0 and vs.Y > 0 then
+		lobbyScale.Scale = math.clamp(math.min(vs.X / 960, vs.Y / 640), 0.45, 1.25)
+	end
+end
+root:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitLobby)
+fitLobby()
+
+local function lobbyLabel(text, pos, size, font, color, textSize, align)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.Position = pos
+	l.Size = size
+	l.Font = font
+	l.TextColor3 = color
+	l.TextSize = textSize
+	l.TextXAlignment = align or Enum.TextXAlignment.Left
+	l.TextWrapped = true
+	l.ZIndex = 62
+	l.Parent = lobbyCard
+	return l
 end
 
--- Selector de Dificultad
-local diffLabel = Instance.new("TextLabel")
-diffLabel.Size = UDim2.new(1, -40, 0, 24)
-diffLabel.Position = UDim2.fromOffset(20, 235)
-diffLabel.BackgroundTransparency = 1
-diffLabel.Font = Enum.Font.GothamBold
-diffLabel.Text = "Dificultad de los Bots:"
-diffLabel.TextColor3 = Color3.fromRGB(200, 220, 245)
-diffLabel.TextSize = 13
-diffLabel.TextXAlignment = Enum.TextXAlignment.Left
-diffLabel.ZIndex = 41
-diffLabel.Parent = modalLobby
+local function roundCorners(obj, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = obj
+end
 
-local diffButtons = {}
-local diffs = {
+lobbyLabel(
+	"🌍 RECUPERAR PANAMÁ Y EL MUNDO",
+	UDim2.fromOffset(28, 18),
+	UDim2.fromOffset(700, 38),
+	Enum.Font.GothamBlack,
+	Color3.fromRGB(255, 215, 0),
+	26
+)
+lobbyLabel(
+	"Conquista el mundo país por país. Hasta 20 jugadores por servidor.",
+	UDim2.fromOffset(28, 56),
+	UDim2.fromOffset(700, 20),
+	Enum.Font.Gotham,
+	Color3.fromRGB(150, 170, 200),
+	13
+)
+
+local btnLobbyClose = Instance.new("TextButton")
+btnLobbyClose.AnchorPoint = Vector2.new(1, 0)
+btnLobbyClose.Position = UDim2.new(1, -20, 0, 20)
+btnLobbyClose.Size = UDim2.fromOffset(34, 34)
+btnLobbyClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+btnLobbyClose.BorderSizePixel = 0
+btnLobbyClose.Font = Enum.Font.GothamBlack
+btnLobbyClose.Text = "✕"
+btnLobbyClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnLobbyClose.TextSize = 15
+btnLobbyClose.Visible = false
+btnLobbyClose.ZIndex = 63
+btnLobbyClose.Parent = lobbyCard
+roundCorners(btnLobbyClose, 8)
+
+-- ---- Columna izquierda: modos de juego ----
+lobbyLabel("MODO DE JUEGO", UDim2.fromOffset(28, 96), UDim2.fromOffset(440, 18), Enum.Font.GothamBold, COLOR_ACCENT, 12)
+
+local MODES = {
+	{
+		id = "COUNTRIES",
+		icon = "🏳️",
+		name = "PAÍSES VS PAÍSES",
+		desc = "Elige un país real y conquista el mundo. Ideal para jugar con amigos.",
+		tag = "RECOMENDADO",
+	},
+	{
+		id = "FREE",
+		icon = "🌐",
+		name = "LIBRE",
+		desc = "Aparece donde quieras en el mapa y expándete desde cero.",
+	},
+	{
+		id = "CONTINENTS",
+		icon = "🧭",
+		name = "CONTINENTES",
+		desc = "Un equipo por continente. Próximamente.",
+		disabled = true,
+	},
+}
+
+local modeCards = {}
+for i, m in ipairs(MODES) do
+	local card = Instance.new("TextButton")
+	card.Name = "Mode_" .. m.id
+	card.Position = UDim2.fromOffset(28, 120 + (i - 1) * 108)
+	card.Size = UDim2.fromOffset(440, 98)
+	card.BackgroundColor3 = COLOR_CARD
+	card.BorderSizePixel = 0
+	card.AutoButtonColor = not m.disabled
+	card.Text = ""
+	card.ZIndex = 62
+	card.Parent = lobbyCard
+	roundCorners(card, 12)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 2
+	stroke.Color = Color3.fromRGB(50, 66, 96)
+	stroke.Parent = card
+
+	local icon = Instance.new("TextLabel")
+	icon.BackgroundTransparency = 1
+	icon.Position = UDim2.fromOffset(12, 0)
+	icon.Size = UDim2.fromOffset(58, 98)
+	icon.Font = Enum.Font.GothamBold
+	icon.Text = m.icon
+	icon.TextSize = 36
+	icon.TextColor3 = Color3.fromRGB(255, 255, 255)
+	icon.ZIndex = 63
+	icon.Parent = card
+
+	local name = Instance.new("TextLabel")
+	name.BackgroundTransparency = 1
+	name.Position = UDim2.fromOffset(76, 14)
+	name.Size = UDim2.new(1, -90, 0, 22)
+	name.Font = Enum.Font.GothamBlack
+	name.Text = m.name
+	name.TextSize = 16
+	name.TextXAlignment = Enum.TextXAlignment.Left
+	name.TextColor3 = if m.disabled then Color3.fromRGB(120, 130, 150) else Color3.fromRGB(240, 246, 255)
+	name.ZIndex = 63
+	name.Parent = card
+
+	local desc = Instance.new("TextLabel")
+	desc.BackgroundTransparency = 1
+	desc.Position = UDim2.fromOffset(76, 40)
+	desc.Size = UDim2.new(1, -92, 0, 48)
+	desc.Font = Enum.Font.Gotham
+	desc.Text = m.desc
+	desc.TextSize = 12
+	desc.TextWrapped = true
+	desc.TextXAlignment = Enum.TextXAlignment.Left
+	desc.TextYAlignment = Enum.TextYAlignment.Top
+	desc.TextColor3 = Color3.fromRGB(150, 168, 196)
+	desc.ZIndex = 63
+	desc.Parent = card
+
+	if m.tag then
+		local tag = Instance.new("TextLabel")
+		tag.AnchorPoint = Vector2.new(1, 0)
+		tag.Position = UDim2.new(1, -10, 0, 10)
+		tag.Size = UDim2.fromOffset(104, 18)
+		tag.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
+		tag.Font = Enum.Font.GothamBlack
+		tag.Text = m.tag
+		tag.TextSize = 10
+		tag.TextColor3 = Color3.fromRGB(255, 255, 255)
+		tag.ZIndex = 64
+		tag.Parent = card
+		roundCorners(tag, 9)
+	end
+
+	modeCards[m.id] = { card = card, stroke = stroke, disabled = m.disabled }
+end
+
+-- ---- Columna derecha: mapa, dificultad, bots ----
+local rightX = 496
+lobbyLabel("MAPA", UDim2.fromOffset(rightX, 96), UDim2.fromOffset(396, 18), Enum.Font.GothamBold, COLOR_ACCENT, 12)
+
+local planetNote = lobbyLabel(
+	"",
+	UDim2.fromOffset(rightX, 118),
+	UDim2.fromOffset(396, 30),
+	Enum.Font.Gotham,
+	Color3.fromRGB(150, 168, 196),
+	11
+)
+planetNote.TextYAlignment = Enum.TextYAlignment.Top
+
+local PLANETS = {
+	{ id = "EARTH", name = "🌍 Tierra" },
+	{ id = "PANGEA", name = "🦕 Pangea" },
+	{ id = "MARS", name = "🔴 Marte" },
+	{ id = "MOON", name = "🌕 Luna" },
+	{ id = "VENUS", name = "🪐 Venus" },
+	{ id = "ANDROMEDA", name = "🌌 Andrómeda" },
+}
+local planetChips = {}
+for i, p in ipairs(PLANETS) do
+	local col = (i - 1) % 3
+	local row = (i - 1) // 3
+	local chip = Instance.new("TextButton")
+	chip.Position = UDim2.fromOffset(rightX + col * 134, 152 + row * 40)
+	chip.Size = UDim2.fromOffset(128, 34)
+	chip.BackgroundColor3 = COLOR_CHIP
+	chip.BorderSizePixel = 0
+	chip.Font = Enum.Font.GothamBold
+	chip.Text = p.name
+	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
+	chip.TextSize = 12
+	chip.ZIndex = 62
+	chip.Parent = lobbyCard
+	roundCorners(chip, 8)
+	planetChips[p.id] = chip
+end
+
+lobbyLabel(
+	"DIFICULTAD DE LOS BOTS",
+	UDim2.fromOffset(rightX, 246),
+	UDim2.fromOffset(396, 18),
+	Enum.Font.GothamBold,
+	COLOR_ACCENT,
+	12
+)
+local DIFFS = {
 	{ id = "EASY", name = "🟢 Fácil" },
 	{ id = "NORMAL", name = "🟡 Normal" },
 	{ id = "HARD", name = "🟠 Difícil" },
 	{ id = "EXTREME", name = "🔴 Extrema" },
 }
+local diffChips = {}
+for i, d in ipairs(DIFFS) do
+	local chip = Instance.new("TextButton")
+	chip.Position = UDim2.fromOffset(rightX + (i - 1) * 100, 270)
+	chip.Size = UDim2.fromOffset(94, 34)
+	chip.BackgroundColor3 = COLOR_CHIP
+	chip.BorderSizePixel = 0
+	chip.Font = Enum.Font.GothamBold
+	chip.Text = d.name
+	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
+	chip.TextSize = 12
+	chip.ZIndex = 62
+	chip.Parent = lobbyCard
+	roundCorners(chip, 8)
+	diffChips[d.id] = chip
+end
 
-for i, d in ipairs(diffs) do
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.fromOffset(130, 32)
-	btn.Position = UDim2.fromOffset(20 + (i - 1) * 142, 265)
-	btn.BackgroundColor3 = (d.id == selDiff) and Color3.fromRGB(0, 180, 120) or Color3.fromRGB(30, 40, 60)
-	btn.BorderSizePixel = 0
-	btn.Font = Enum.Font.GothamBold
-	btn.Text = d.name
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.TextSize = 12
-	btn.ZIndex = 42
-	btn.Parent = modalLobby
+local botsLabel = lobbyLabel(
+	"NÚMERO DE BOTS (modo Libre)",
+	UDim2.fromOffset(rightX, 316),
+	UDim2.fromOffset(396, 18),
+	Enum.Font.GothamBold,
+	COLOR_ACCENT,
+	12
+)
+local BOT_COUNTS = { 20, 40, 60, 90 }
+local botChips = {}
+for i, n in ipairs(BOT_COUNTS) do
+	local chip = Instance.new("TextButton")
+	chip.Position = UDim2.fromOffset(rightX + (i - 1) * 100, 340)
+	chip.Size = UDim2.fromOffset(94, 34)
+	chip.BackgroundColor3 = COLOR_CHIP
+	chip.BorderSizePixel = 0
+	chip.Font = Enum.Font.GothamBold
+	chip.Text = "🤖 " .. n
+	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
+	chip.TextSize = 12
+	chip.ZIndex = 62
+	chip.Parent = lobbyCard
+	roundCorners(chip, 8)
+	botChips[n] = chip
+end
 
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, 6)
-	c.Parent = btn
+-- Consejos de juego
+local tips = lobbyLabel(
+	"🖱 Clic en una frontera: atacar   ·   Clic derecho + arrastrar: mover el mapa   ·   Rueda: zoom\n🛡 La IA de Defensa protege tus fronteras; tú decides dónde construir y a quién atacar.",
+	UDim2.fromOffset(rightX, 398),
+	UDim2.fromOffset(396, 70),
+	Enum.Font.Gotham,
+	Color3.fromRGB(130, 148, 176),
+	11
+)
+tips.TextYAlignment = Enum.TextYAlignment.Top
 
-	diffButtons[d.id] = btn
+-- ---- Barra inferior: estado del servidor y botón JUGAR ----
+local lobbyDivider = Instance.new("Frame")
+lobbyDivider.Position = UDim2.fromOffset(28, 478)
+lobbyDivider.Size = UDim2.fromOffset(864, 1)
+lobbyDivider.BackgroundColor3 = Color3.fromRGB(40, 54, 80)
+lobbyDivider.BorderSizePixel = 0
+lobbyDivider.ZIndex = 62
+lobbyDivider.Parent = lobbyCard
 
-	btn.MouseButton1Click:Connect(function()
+local lobbyStatus = lobbyLabel(
+	"Conectando con el servidor...",
+	UDim2.fromOffset(28, 492),
+	UDim2.fromOffset(540, 22),
+	Enum.Font.GothamBold,
+	Color3.fromRGB(220, 232, 250),
+	13
+)
+local lobbyHint = lobbyLabel(
+	"",
+	UDim2.fromOffset(28, 516),
+	UDim2.fromOffset(540, 44),
+	Enum.Font.Gotham,
+	Color3.fromRGB(255, 190, 90),
+	12
+)
+lobbyHint.TextYAlignment = Enum.TextYAlignment.Top
+
+local btnPlay = Instance.new("TextButton")
+btnPlay.AnchorPoint = Vector2.new(1, 0)
+btnPlay.Position = UDim2.new(1, -28, 0, 494)
+btnPlay.Size = UDim2.fromOffset(290, 62)
+btnPlay.BackgroundColor3 = Color3.fromRGB(0, 190, 120)
+btnPlay.BorderSizePixel = 0
+btnPlay.Font = Enum.Font.GothamBlack
+btnPlay.Text = "▶  JUGAR"
+btnPlay.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnPlay.TextSize = 22
+btnPlay.ZIndex = 63
+btnPlay.Parent = lobbyCard
+roundCorners(btnPlay, 12)
+
+-- ---- Lógica de selección ----
+local function refreshLobby()
+	if selMode == "COUNTRIES" then
+		selPlanet = "EARTH"
+	end
+	for id, c in pairs(modeCards) do
+		local selected = id == selMode
+		c.card.BackgroundColor3 = if selected then COLOR_CARD_SEL else COLOR_CARD
+		c.stroke.Color = if selected then COLOR_ACCENT else Color3.fromRGB(50, 66, 96)
+		c.card.BackgroundTransparency = if c.disabled then 0.5 else 0
+	end
+	local freeMode = selMode == "FREE"
+	planetNote.Text = if freeMode
+		then "Elige el mundo donde jugar."
+		else "Mapa: la Tierra real, con sus 164 países y sus fronteras."
+	for id, chip in pairs(planetChips) do
+		local selected = id == selPlanet
+		chip.BackgroundColor3 = if selected then Color3.fromRGB(0, 140, 210) else COLOR_CHIP
+		chip.BackgroundTransparency = if freeMode or id == "EARTH" then 0 else 0.6
+		chip.TextTransparency = if freeMode or id == "EARTH" then 0 else 0.5
+	end
+	for id, chip in pairs(diffChips) do
+		chip.BackgroundColor3 = if id == selDiff then Color3.fromRGB(0, 170, 115) else COLOR_CHIP
+	end
+	botsLabel.TextTransparency = if freeMode then 0 else 0.6
+	for n, chip in pairs(botChips) do
+		chip.BackgroundColor3 = if n == selBots and freeMode then Color3.fromRGB(150, 90, 220) else COLOR_CHIP
+		chip.BackgroundTransparency = if freeMode then 0 else 0.6
+		chip.TextTransparency = if freeMode then 0 else 0.5
+	end
+end
+
+for _, m in ipairs(MODES) do
+	if not m.disabled then
+		modeCards[m.id].card.MouseButton1Click:Connect(function()
+			selMode = m.id
+			refreshLobby()
+		end)
+	else
+		modeCards[m.id].card.MouseButton1Click:Connect(function()
+			showToast("🧭 El modo Continentes llegará pronto", Color3.fromRGB(255, 200, 80))
+		end)
+	end
+end
+for _, p in ipairs(PLANETS) do
+	planetChips[p.id].MouseButton1Click:Connect(function()
+		if selMode == "FREE" then
+			selPlanet = p.id
+			refreshLobby()
+		else
+			showToast("Para elegir otros mundos usa el modo Libre", Color3.fromRGB(255, 200, 80))
+		end
+	end)
+end
+for _, d in ipairs(DIFFS) do
+	diffChips[d.id].MouseButton1Click:Connect(function()
 		selDiff = d.id
-		for did, b in pairs(diffButtons) do
-			b.BackgroundColor3 = (did == selDiff) and Color3.fromRGB(0, 180, 120) or Color3.fromRGB(30, 40, 60)
+		refreshLobby()
+	end)
+end
+for _, n in ipairs(BOT_COUNTS) do
+	botChips[n].MouseButton1Click:Connect(function()
+		if selMode == "FREE" then
+			selBots = n
+			refreshLobby()
 		end
 	end)
 end
 
--- Botón Iniciar Partida
-local btnStartMatch = Instance.new("TextButton")
-btnStartMatch.Size = UDim2.fromOffset(360, 46)
-btnStartMatch.AnchorPoint = Vector2.new(0.5, 1)
-btnStartMatch.Position = UDim2.new(0.5, 0, 1, -20)
-btnStartMatch.BackgroundColor3 = Color3.fromRGB(255, 160, 0)
-btnStartMatch.BorderSizePixel = 0
-btnStartMatch.Font = Enum.Font.GothamBlack
-btnStartMatch.Text = "🚀 ¡INICIAR NUEVA PARTIDA!"
-btnStartMatch.TextColor3 = Color3.fromRGB(15, 20, 30)
-btnStartMatch.TextSize = 14
-btnStartMatch.ZIndex = 42
-btnStartMatch.Parent = modalLobby
+local MODE_NAMES = { COUNTRIES = "Países vs Países", FREE = "Libre" }
+local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
 
-local startCorner = Instance.new("UICorner")
-startCorner.CornerRadius = UDim.new(0, 8)
-startCorner.Parent = btnStartMatch
+local function updateLobbyStatus()
+	local s = state.stats
+	if not s then
+		lobbyStatus.Text = "Conectando con el servidor..."
+		lobbyHint.Text = ""
+		return
+	end
+	local players = s.players or 1
+	lobbyStatus.Text = string.format(
+		"👥 %d/%d jugadores   ·   Partida: %s (%s)",
+		players,
+		s.maxPlayers or 20,
+		MODE_NAMES[s.mode or "FREE"] or "Libre",
+		PHASE_NAMES[s.phase or ""] or "..."
+	)
+	local isHost = s.hostId == player.UserId
+	if players > 1 and not isHost and s.phase ~= "ENDED" then
+		lobbyHint.Text = "Solo el anfitrión puede cambiar el modo: entrarás a la partida en curso."
+		btnPlay.Text = "▶  ENTRAR"
+	else
+		lobbyHint.Text = ""
+		btnPlay.Text = "▶  JUGAR"
+	end
+end
 
-btnStartMatch.MouseButton1Click:Connect(function()
-	modalLobby.Visible = false
+local function showLobby(visible)
+	lobbyScreen.Visible = visible
+	btnLobbyClose.Visible = visible and state.initialized
+	if visible then
+		refreshLobby()
+		updateLobbyStatus()
+	end
+end
+
+btnPlay.MouseButton1Click:Connect(function()
+	showLobby(false)
 	WorldCommand:FireServer({
 		a = "PLAY",
 		planet = selPlanet,
 		bots = selBots,
 		difficulty = selDiff,
+		mode = selMode,
 	})
-	showToast("Reiniciando mundo en modo " .. selPlanet .. "...", Color3.fromRGB(255, 215, 0))
+	showToast("Cargando partida...", Color3.fromRGB(255, 215, 0))
 end)
+btnLobbyClose.MouseButton1Click:Connect(function()
+	showLobby(false)
+end)
+btnLobby.MouseButton1Click:Connect(function()
+	showLobby(not lobbyScreen.Visible)
+end)
+
+showLobby(true)
 
 -- ============================================================================
 -- RENDERIZADO DEL MAPA CON EDITABLEIMAGE
 -- ============================================================================
+-- ----------------------------------------------------------------------------
+-- RESPALDO: mapa por bloques de color (no requiere el permiso EditableImage).
+-- Cada bloque agrupa BLOCK x BLOCK celdas: color medio de la foto satelital + tinte del país dominante.
+-- BLOCK debe dividir a 960 y 400 (4, 5, 8, 10, 16). Menor = más detalle y más rectángulos en pantalla.
+-- ----------------------------------------------------------------------------
+local BLOCK = 5
+
+-- Mapa de la Tierra en alta resolución (2x2 px por celda), generado con
+-- `python tools/generate_relief_style.py --tiles` y subido a Roblox. Si cambias el mapa, sube de nuevo las
+-- teselas y actualiza estos ids. Los otros mundos (Marte, Luna...) no tienen teselas y usan solo bloques.
+local EARTH_TILES = { "rbxassetid://122231731451803", "rbxassetid://115442226521313" }
+-- Fronteras entre países (PNG transparente de 2x2 px por celda), de `python tools/build_countries.py --borders`
+local BORDER_TILES = { "rbxassetid://77774919074501", "rbxassetid://120746897652823" }
+local tileLayer = nil
+local borderLayer = nil
+
+local function makeTileLayer(name, ids, zIndex)
+	local layer = Instance.new("Frame")
+	layer.Name = name
+	layer.Size = UDim2.fromScale(1, 1)
+	layer.BackgroundTransparency = 1
+	layer.BorderSizePixel = 0
+	layer.ZIndex = zIndex
+	for i, id in ipairs(ids) do
+		local img = Instance.new("ImageLabel")
+		img.Name = "Tile" .. i
+		img.BackgroundTransparency = 1
+		img.BorderSizePixel = 0
+		img.Image = id
+		img.ResampleMode = Enum.ResamplerMode.Pixelated -- píxeles nítidos, celda por celda
+		img.Position = UDim2.fromScale((i - 1) / #ids, 0)
+		img.Size = UDim2.fromScale(1 / #ids + 0.002, 1) -- solape para tapar la costura entre teselas
+		img.Parent = layer
+	end
+	layer.Parent = mapCanvas
+	return layer
+end
+
+local function setTilesVisible(visible)
+	if visible and not tileLayer then
+		tileLayer = makeTileLayer("TileLayer", EARTH_TILES, -8) -- debajo de los bloques de color de los países
+		borderLayer = makeTileLayer("BorderLayer", BORDER_TILES, -3) -- encima del tinte, debajo de marcadores
+	end
+	if tileLayer then
+		tileLayer.Visible = visible
+	end
+	if borderLayer then
+		borderLayer.Visible = visible
+	end
+end
+
+local function initBlocks(w, h)
+	mapImage.Visible = false
+	state.blockMode = true
+	state.useTiles = state.planet == "EARTH"
+	setTilesVisible(state.useTiles)
+	local bw, bh = w // BLOCK, h // BLOCK
+	if state.blocks and state.blockW == bw and state.blockH == bh then
+		if state.blockLayer then
+			state.blockLayer.Visible = true
+		end
+		return
+	end
+	if state.blockLayer then
+		state.blockLayer:Destroy()
+	end
+
+	local layer = Instance.new("Frame")
+	layer.Name = "BlockLayer"
+	layer.Size = UDim2.fromScale(1, 1)
+	layer.BackgroundTransparency = 1
+	layer.BorderSizePixel = 0
+	layer.ZIndex = -5 -- siempre por debajo de marcadores, efectos y cursor
+
+	local blocks = table.create(bw * bh)
+	for by = 0, bh - 1 do
+		for bx = 0, bw - 1 do
+			local f = Instance.new("Frame")
+			f.BorderSizePixel = 0
+			f.BackgroundColor3 = OCEAN_COLOR
+			f.Position = UDim2.fromScale(bx / bw, by / bh)
+			-- Opacos: ligero solape para evitar costuras. Semitransparentes (sobre las teselas): sin solape,
+			-- porque donde dos bloques se superponen el color se oscurece y dibuja una rejilla.
+			if state.useTiles then
+				f.Size = UDim2.fromScale(1 / bw, 1 / bh)
+			else
+				f.Size = UDim2.fromScale(1 / bw + 0.0005, 1 / bh + 0.0008)
+			end
+			f.Parent = layer
+			blocks[by * bw + bx + 1] = { frame = f, r = 14, g = 28, b = 52 }
+		end
+	end
+	layer.Parent = mapCanvas
+
+	state.blocks = blocks
+	state.blockLayer = layer
+	state.blockW = bw
+	state.blockH = bh
+	state.dirtyBlocks = {}
+	warn(
+		"[WorldClient] EditableImage no disponible: usando mapa por bloques de " .. BLOCK .. "x" .. BLOCK .. " celdas."
+	)
+end
+
+local function recolorBlock(bi)
+	local b = state.blocks[bi]
+	if not b then
+		return
+	end
+	local bx = (bi - 1) % state.blockW
+	local by = (bi - 1) // state.blockW
+	local w = state.w
+	local owner = state.owner
+	local counts = {}
+	local bestId, bestCount = 0, 0
+	local x0, y0 = bx * BLOCK, by * BLOCK
+	for y = y0, y0 + BLOCK - 1 do
+		local row = y * w
+		for x = x0, x0 + BLOCK - 1 do
+			local o = buffer.readu8(owner, row + x)
+			if o ~= 0 then
+				local c = (counts[o] or 0) + 1
+				counts[o] = c
+				if c > bestCount then
+					bestCount = c
+					bestId = o
+				end
+			end
+		end
+	end
+
+	local r, g, bl = b.r, b.g, b.b
+	local n = if bestId ~= 0 then state.rosterById[bestId] else nil
+	-- Con las teselas de fondo, el bloque solo se tiñe (semitransparente) donde un país domina la celda
+	if state.useTiles and n and bestCount < 8 then
+		n = nil
+	end
+	local transparency = 0
+	if n then
+		local isMe = bestId == state.myId
+		if state.useTiles then
+			r, g, bl = n.r or 200, n.g or 200, n.b or 200
+			-- Tú y los jugadores humanos se ven con más fuerza que los bots
+			transparency = if isMe then 0.4 elseif n.bot == false then 0.45 else 0.58
+		else
+			local alpha = math.min(if isMe then 0.8 else 0.64, bestCount / (BLOCK * BLOCK) * 1.6)
+			r = r * (1 - alpha) + (n.r or 200) * alpha
+			g = g * (1 - alpha) + (n.g or 200) * alpha
+			bl = bl * (1 - alpha) + (n.b or 200) * alpha
+		end
+		if isMe then
+			r, g, bl = r * 1.12, g * 1.12, bl * 1.12
+		end
+	elseif state.useTiles then
+		transparency = 1
+	end
+	b.frame.BackgroundTransparency = transparency
+	b.frame.BackgroundColor3 = Color3.fromRGB(
+		math.clamp(math.floor(r), 0, 255),
+		math.clamp(math.floor(g), 0, 255),
+		math.clamp(math.floor(bl), 0, 255)
+	)
+end
+
+local function markBlockDirty(idx)
+	local w = state.w
+	local bi = ((idx // w) // BLOCK) * state.blockW + ((idx % w) // BLOCK) + 1
+	state.dirtyBlocks[bi] = true
+end
+
 local function initEditableImage(w, h)
 	state.w = w
 	state.h = h
@@ -802,13 +1293,31 @@ local function initEditableImage(w, h)
 		local ok, img = pcall(function()
 			return AssetService:CreateEditableImage({ Size = Vector2.new(w, h) })
 		end)
+		-- Crear el objeto no basta: sin el permiso de la experiencia, escribir/dibujar falla. Se prueba una escritura.
+		local usable = false
 		if ok and img then
+			local okWrite, errWrite = pcall(function()
+				img:WritePixelsBuffer(Vector2.zero, Vector2.new(1, 1), buffer.create(4))
+			end)
+			usable = okWrite
+			if not okWrite then
+				warn("EditableImage sin permiso de escritura:", errWrite)
+			end
+		end
+		if usable then
 			state.editableImage = img
 			mapImage.ImageContent = Content.fromObject(img)
 		else
 			warn("Fallo al crear EditableImage:", img)
+			initBlocks(w, h)
 			return
 		end
+	end
+	state.blockMode = false
+	mapImage.Visible = true
+	setTilesVisible(false)
+	if state.blockLayer then
+		state.blockLayer.Visible = false
 	end
 
 	state.pixelBuffer = buffer.create(w * h * 4)
@@ -823,6 +1332,10 @@ local function initEditableImage(w, h)
 end
 
 local function drawCell(idx, ownerId)
+	if state.blockMode then
+		markBlockDirty(idx)
+		return
+	end
 	if not state.editableImage or not state.pixelBuffer or not state.baseBuffer then
 		return
 	end
@@ -895,15 +1408,56 @@ local function drawCell(idx, ownerId)
 	buffer.writeu8(state.pixelBuffer, offset4 + 3, 255)
 end
 
+local fullRedraw -- declarada aquí porque flushImage la usa al cambiar al modo por bloques
+
 local function flushImage()
+	if state.blockMode then
+		for bi in pairs(state.dirtyBlocks) do
+			recolorBlock(bi)
+			state.dirtyBlocks[bi] = nil
+		end
+		return
+	end
 	if state.editableImage and state.pixelBuffer then
-		pcall(function()
+		local ok, err = pcall(function()
 			state.editableImage:WritePixelsBuffer(Vector2.zero, Vector2.new(state.w, state.h), state.pixelBuffer)
 		end)
+		if not ok then
+			warn("[WorldClient] EditableImage falló al dibujar (" .. tostring(err) .. "): usando mapa por bloques")
+			state.editableImage = nil
+			initBlocks(state.w, state.h)
+			fullRedraw()
+		end
 	end
 end
 
-local function fullRedraw()
+function fullRedraw()
+	if state.blockMode then
+		if not state.blocks or not state.owner or not state.baseBuffer then
+			return
+		end
+		-- Color base de cada bloque = media de la foto satelital (incluye mar y costas)
+		local w, base = state.w, state.baseBuffer
+		local area = BLOCK * BLOCK
+		for bi = 1, state.blockW * state.blockH do
+			local bx = (bi - 1) % state.blockW
+			local by = (bi - 1) // state.blockW
+			local sr, sg, sb = 0, 0, 0
+			for y = by * BLOCK, by * BLOCK + BLOCK - 1 do
+				for x = bx * BLOCK, bx * BLOCK + BLOCK - 1 do
+					local o = (y * w + x) * 3
+					sr += buffer.readu8(base, o)
+					sg += buffer.readu8(base, o + 1)
+					sb += buffer.readu8(base, o + 2)
+				end
+			end
+			local b = state.blocks[bi]
+			b.r, b.g, b.b = sr / area, sg / area, sb / area
+			state.dirtyBlocks[bi] = true
+		end
+		flushImage()
+		return
+	end
 	if not state.editableImage or not state.pixelBuffer or not state.land or not state.owner then
 		return
 	end
@@ -918,18 +1472,40 @@ end
 -- MARCADORES VISUALES (Capitales con Corona Dorada [TÚ], Iconos de Ciudades)
 -- ============================================================================
 local markerPool = {}
+local markerLabels = {}
 
 local function clearMarkers()
 	for _, m in pairs(markerPool) do
 		m:Destroy()
 	end
 	table.clear(markerPool)
+	table.clear(markerLabels)
+end
+
+-- Con zoom bajo solo se rotulan tú, los jugadores y los países más grandes; al acercar se ven todos
+local function applyLabelZoom()
+	for _, m in ipairs(markerLabels) do
+		m.label.Visible = m.always or state.zoom >= 1.3
+	end
 end
 
 local function updateMarkers()
 	clearMarkers()
 	if not state.roster then
 		return
+	end
+
+	-- Los 25 países con más territorio siempre llevan rótulo
+	local bySize = {}
+	for _, n in ipairs(state.roster) do
+		table.insert(bySize, n)
+	end
+	table.sort(bySize, function(a, b)
+		return (a.cells or 0) > (b.cells or 0)
+	end)
+	local bigIds = {}
+	for i = 1, math.min(25, #bySize) do
+		bigIds[bySize[i].id] = true
 	end
 
 	for _, n in ipairs(state.roster) do
@@ -998,15 +1574,24 @@ local function updateMarkers()
 			nameLbl.Size = UDim2.fromOffset(100, 16)
 			nameLbl.Position = UDim2.fromOffset(-38, isMe and 14 or 8)
 			nameLbl.BackgroundTransparency = 1
-			nameLbl.Font = isMe and Enum.Font.GothamBlack or Enum.Font.GothamBold
-			nameLbl.Text = (isMe and "👑 " or "") .. n.name
-			nameLbl.TextColor3 = isMe and Color3.fromRGB(255, 230, 50) or Color3.fromRGB(230, 235, 245)
-			nameLbl.TextSize = isMe and 11 or 9
+			local isHuman = n.bot == false
+			nameLbl.Font = if isMe or isHuman then Enum.Font.GothamBlack else Enum.Font.GothamBold
+			nameLbl.Text = (if isMe then "👑 " elseif isHuman then "👤 " else "") .. n.name
+			-- El rótulo toma el color del país (aclarado) y lleva contorno oscuro para leerse sobre cualquier fondo
+			nameLbl.TextColor3 = if isMe
+				then Color3.fromRGB(255, 230, 50)
+				else n.color:Lerp(Color3.new(1, 1, 1), if isHuman then 0.25 else 0.55)
+			nameLbl.TextStrokeTransparency = 0.35
+			nameLbl.TextStrokeColor3 = Color3.fromRGB(8, 10, 16)
+			nameLbl.TextSize = if isMe or isHuman then 12 else 9
+			nameLbl.ZIndex = 11
 			nameLbl.Parent = marker
 
 			table.insert(markerPool, marker)
+			table.insert(markerLabels, { label = nameLbl, always = isMe or isHuman or bigIds[n.id] == true })
 		end
 	end
+	applyLabelZoom()
 end
 
 -- ============================================================================
@@ -1045,10 +1630,18 @@ local function handleMapClick(cell)
 		return
 	end
 
-	-- Fase de Spawn
-	if state.stats and state.stats.phase == "SPAWN" then
+	-- Fase de Spawn (o, en modo Países, quien todavía no tiene país)
+	local needsSpawn = state.stats ~= nil and state.stats.phase == "SPAWN"
+	if state.mode == "COUNTRIES" and not state.me.alive and not (state.stats and state.stats.phase == "ENDED") then
+		needsSpawn = true
+	end
+	if needsSpawn then
 		WorldCommand:FireServer({ a = "SPAWN", cell = cell })
-		showToast("📍 Capital establecida en la celda " .. cell, Color3.fromRGB(0, 220, 255))
+		if state.mode == "COUNTRIES" then
+			showToast("🌍 Intentando tomar ese país...", Color3.fromRGB(0, 220, 255))
+		else
+			showToast("📍 Capital establecida en la celda " .. cell, Color3.fromRGB(0, 220, 255))
+		end
 		return
 	end
 
@@ -1102,6 +1695,7 @@ local function updateMapTransform()
 
 	mapCanvas.Size = UDim2.fromOffset(scaledW, scaledH)
 	mapCanvas.Position = UDim2.fromOffset(viewportSize.X / 2 + state.pan.X, viewportSize.Y / 2 + state.pan.Y)
+	applyLabelZoom()
 end
 
 mapContainer.InputBegan:Connect(function(input)
@@ -1158,6 +1752,137 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- ============================================================================
+-- TOOLTIP DE TERRITORIO: al pasar el ratón por el mapa muestra de quién es esa tierra
+-- ============================================================================
+local PERSONA_LABELS = {
+	CONQUEROR = "⚔️ Conquistador",
+	MERCHANT = "💰 Mercader",
+	TURTLE = "🛡️ Defensor",
+	OPPORTUNIST = "🦊 Oportunista",
+	ADMIRAL = "⚓ Navegante",
+	NUKER = "☢️ Estratega Nuclear",
+}
+
+local hoverTip = Instance.new("Frame")
+hoverTip.Name = "HoverTip"
+hoverTip.Size = UDim2.fromOffset(210, 92)
+hoverTip.BackgroundColor3 = Color3.fromRGB(12, 18, 30)
+hoverTip.BackgroundTransparency = 0.05
+hoverTip.BorderSizePixel = 0
+hoverTip.Visible = false
+hoverTip.ZIndex = 50
+hoverTip.Parent = root
+
+local hoverTipCorner = Instance.new("UICorner")
+hoverTipCorner.CornerRadius = UDim.new(0, 8)
+hoverTipCorner.Parent = hoverTip
+
+local hoverTipStroke = Instance.new("UIStroke")
+hoverTipStroke.Thickness = 2
+hoverTipStroke.Parent = hoverTip
+
+local hoverSwatch = Instance.new("Frame")
+hoverSwatch.Position = UDim2.fromOffset(10, 11)
+hoverSwatch.Size = UDim2.fromOffset(14, 14)
+hoverSwatch.BorderSizePixel = 0
+hoverSwatch.ZIndex = 51
+hoverSwatch.Parent = hoverTip
+local hoverSwatchStroke = Instance.new("UIStroke")
+hoverSwatchStroke.Color = Color3.fromRGB(240, 245, 255)
+hoverSwatchStroke.Parent = hoverSwatch
+
+local function tipLabel(y, size, font)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Position = UDim2.fromOffset(30, y)
+	l.Size = UDim2.new(1, -38, 0, size + 4)
+	l.Font = font
+	l.TextSize = size
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextTruncate = Enum.TextTruncate.AtEnd
+	l.TextColor3 = Color3.fromRGB(235, 242, 255)
+	l.ZIndex = 51
+	l.Parent = hoverTip
+	return l
+end
+local tipName = tipLabel(8, 14, Enum.Font.GothamBlack)
+local tipKind = tipLabel(30, 12, Enum.Font.GothamBold)
+local tipCountry = tipLabel(48, 11, Enum.Font.Gotham)
+local tipStats = tipLabel(66, 11, Enum.Font.Gotham)
+tipCountry.TextColor3 = Color3.fromRGB(160, 180, 210)
+tipStats.TextColor3 = Color3.fromRGB(200, 215, 240)
+
+local tipOwner, tipStamp = -1, 0
+local function describeNation(ownerId)
+	local n = state.rosterById[ownerId]
+	local human = state.humanById and state.humanById[ownerId]
+	local isMe = ownerId == state.myId
+	local color = if n and n.color then n.color else Color3.fromRGB(150, 150, 150)
+	local name = if human then human.name elseif n then n.name else "Nación " .. ownerId
+	local kind, kindColor
+	if isMe then
+		kind, kindColor = "👑 Tú", Color3.fromRGB(255, 225, 60)
+	elseif human or (n and n.bot == false) then
+		kind, kindColor = "👤 Jugador", Color3.fromRGB(120, 235, 160)
+	else
+		kind = "🤖 Bot · " .. (PERSONA_LABELS[n and n.persona or ""] or "IA")
+		kindColor = Color3.fromRGB(255, 170, 130)
+	end
+	-- País del que gobierna (modo Países): el del bot original, o el que eligió el jugador
+	local country = nil
+	local cid = if human then human.cid elseif n then n.countryId else nil
+	if cid then
+		for _, r in ipairs(state.roster) do
+			if r.countryId == cid and r.bot ~= false then
+				country = r.name
+				break
+			end
+		end
+	end
+	local st = state.statById and state.statById[ownerId]
+	local stats = if st
+		then string.format("⚔️ %s tropas · %d celdas", tostring(st.troops or 0), st.cells or 0)
+		else ""
+	return name, color, kind, kindColor, country, stats
+end
+
+RunService.RenderStepped:Connect(function()
+	if not state.initialized or lobbyScreen.Visible or not state.owner then
+		hoverTip.Visible = false
+		return
+	end
+	local mp = Vector2.new(mouse.X, mouse.Y)
+	local cell = screenToCell(mp)
+	if cell < 0 or cell >= state.w * state.h then
+		hoverTip.Visible = false
+		return
+	end
+	local ownerId = buffer.readu8(state.owner, cell)
+	if ownerId == 0 then
+		hoverTip.Visible = false
+		return
+	end
+	-- El texto solo se recalcula al cambiar de dueño o cada medio segundo
+	local now = os.clock()
+	if ownerId ~= tipOwner or now - tipStamp > 0.5 then
+		tipOwner, tipStamp = ownerId, now
+		local name, color, kind, kindColor, country, stats = describeNation(ownerId)
+		tipName.Text = name
+		tipKind.Text = kind
+		tipKind.TextColor3 = kindColor
+		tipCountry.Text = if country and country ~= name then "🏳️ " .. country else ""
+		tipStats.Text = stats
+		hoverSwatch.BackgroundColor3 = color
+		hoverTipStroke.Color = color
+	end
+	local vs = root.AbsoluteSize
+	local x = math.min(mp.X + 18, vs.X - 220)
+	local y = math.min(mp.Y + 18, vs.Y - 100)
+	hoverTip.Position = UDim2.fromOffset(x, y)
+	hoverTip.Visible = true
+end)
+
 -- Botón centrar en capital
 btnCenter.MouseButton1Click:Connect(function()
 	if state.myId > 0 and state.rosterById[state.myId] then
@@ -1175,6 +1900,356 @@ btnCenter.MouseButton1Click:Connect(function()
 			showToast("🎯 Centrado en tu capital", Color3.fromRGB(255, 220, 0))
 		end
 	end
+end)
+
+-- ============================================================================
+-- LISTA DE PAÍSES POR CONTINENTE (modo Países vs Países)
+-- Permite elegir país con buscador, ver quién ya eligió cada uno y coordinarse con amigos.
+-- ============================================================================
+local function centerOnCell(cell)
+	local cx = cell % state.w
+	local cy = math.floor(cell / state.w)
+	local normX = (cx + 0.5) / state.w - 0.5
+	local normY = (cy + 0.5) / state.h - 0.5
+	state.pan = Vector2.new(-normX * BASE_WIDTH * state.zoom, -normY * BASE_HEIGHT * state.zoom)
+	updateMapTransform()
+end
+
+local CONTINENT_NAMES = {
+	[1] = "🌍 África",
+	[2] = "🧊 Antártida",
+	[3] = "🌏 Asia",
+	[4] = "🏰 Europa",
+	[5] = "🌎 Norteamérica",
+	[6] = "🏝️ Oceanía",
+	[7] = "🌎 Sudamérica",
+}
+local CONTINENT_ORDER = { 5, 7, 4, 1, 3, 6, 2 }
+
+local ACCENTS = {
+	["á"] = "a",
+	["é"] = "e",
+	["í"] = "i",
+	["ó"] = "o",
+	["ú"] = "u",
+	["ü"] = "u",
+	["ñ"] = "n",
+	["Á"] = "a",
+	["É"] = "e",
+	["Í"] = "i",
+	["Ó"] = "o",
+	["Ú"] = "u",
+	["Ñ"] = "n",
+}
+local function fold(s)
+	s = string.lower(s)
+	for from, to in pairs(ACCENTS) do
+		s = string.gsub(s, from, to)
+	end
+	return s
+end
+
+local btnCountries = Instance.new("TextButton")
+btnCountries.Name = "BtnCountries"
+btnCountries.AnchorPoint = Vector2.new(1, 0.5)
+btnCountries.Position = UDim2.new(1, -266, 0.5, 0)
+btnCountries.Size = UDim2.fromOffset(110, 34)
+btnCountries.BackgroundColor3 = Color3.fromRGB(30, 90, 70)
+btnCountries.Font = Enum.Font.GothamBold
+btnCountries.Text = "🌍 Países"
+btnCountries.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnCountries.TextSize = 12
+btnCountries.BorderSizePixel = 0
+btnCountries.Visible = false
+btnCountries.ZIndex = 21
+btnCountries.Parent = topBar
+
+local btnCountriesCorner = Instance.new("UICorner")
+btnCountriesCorner.CornerRadius = UDim.new(0, 6)
+btnCountriesCorner.Parent = btnCountries
+
+local countryPanel = Instance.new("Frame")
+countryPanel.Name = "CountryPanel"
+countryPanel.Position = UDim2.fromOffset(12, 80)
+countryPanel.Size = UDim2.new(0, 290, 1, -210)
+countryPanel.BackgroundColor3 = Color3.fromRGB(14, 20, 34)
+countryPanel.BackgroundTransparency = 0.04
+countryPanel.BorderSizePixel = 0
+countryPanel.Visible = false
+countryPanel.ZIndex = 30
+countryPanel.Parent = root
+
+local countryPanelCorner = Instance.new("UICorner")
+countryPanelCorner.CornerRadius = UDim.new(0, 10)
+countryPanelCorner.Parent = countryPanel
+
+local countryPanelStroke = Instance.new("UIStroke")
+countryPanelStroke.Color = Color3.fromRGB(60, 140, 120)
+countryPanelStroke.Thickness = 1.5
+countryPanelStroke.Parent = countryPanel
+
+local countryTitle = Instance.new("TextLabel")
+countryTitle.Size = UDim2.new(1, -16, 0, 26)
+countryTitle.Position = UDim2.fromOffset(8, 6)
+countryTitle.BackgroundTransparency = 1
+countryTitle.Font = Enum.Font.GothamBlack
+countryTitle.Text = "🌍 ELIGE TU PAÍS"
+countryTitle.TextColor3 = Color3.fromRGB(120, 230, 190)
+countryTitle.TextSize = 14
+countryTitle.TextXAlignment = Enum.TextXAlignment.Left
+countryTitle.ZIndex = 31
+countryTitle.Parent = countryPanel
+
+local countrySearch = Instance.new("TextBox")
+countrySearch.Size = UDim2.new(1, -16, 0, 28)
+countrySearch.Position = UDim2.fromOffset(8, 34)
+countrySearch.BackgroundColor3 = Color3.fromRGB(26, 36, 56)
+countrySearch.BorderSizePixel = 0
+countrySearch.Font = Enum.Font.Gotham
+countrySearch.PlaceholderText = "🔍 Buscar país..."
+countrySearch.PlaceholderColor3 = Color3.fromRGB(130, 145, 170)
+countrySearch.Text = ""
+countrySearch.TextColor3 = Color3.fromRGB(240, 245, 255)
+countrySearch.TextSize = 12
+countrySearch.TextXAlignment = Enum.TextXAlignment.Left
+countrySearch.ClearTextOnFocus = false
+countrySearch.ZIndex = 31
+countrySearch.Parent = countryPanel
+
+local countrySearchCorner = Instance.new("UICorner")
+countrySearchCorner.CornerRadius = UDim.new(0, 6)
+countrySearchCorner.Parent = countrySearch
+
+local countrySearchPad = Instance.new("UIPadding")
+countrySearchPad.PaddingLeft = UDim.new(0, 8)
+countrySearchPad.Parent = countrySearch
+
+local countryScroll = Instance.new("ScrollingFrame")
+countryScroll.Position = UDim2.fromOffset(6, 68)
+countryScroll.Size = UDim2.new(1, -12, 1, -68 - 56)
+countryScroll.BackgroundTransparency = 1
+countryScroll.BorderSizePixel = 0
+countryScroll.ScrollBarThickness = 6
+countryScroll.CanvasSize = UDim2.new()
+countryScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+countryScroll.ZIndex = 31
+countryScroll.Parent = countryPanel
+
+local countryList = Instance.new("UIListLayout")
+countryList.SortOrder = Enum.SortOrder.LayoutOrder
+countryList.Padding = UDim.new(0, 2)
+countryList.Parent = countryScroll
+
+local countryConfirm = Instance.new("TextButton")
+countryConfirm.AnchorPoint = Vector2.new(0.5, 1)
+countryConfirm.Position = UDim2.new(0.5, 0, 1, -8)
+countryConfirm.Size = UDim2.new(1, -16, 0, 40)
+countryConfirm.BackgroundColor3 = Color3.fromRGB(40, 52, 76)
+countryConfirm.BorderSizePixel = 0
+countryConfirm.Font = Enum.Font.GothamBlack
+countryConfirm.Text = "Selecciona un país de la lista"
+countryConfirm.TextColor3 = Color3.fromRGB(200, 210, 230)
+countryConfirm.TextSize = 12
+countryConfirm.TextWrapped = true
+countryConfirm.ZIndex = 32
+countryConfirm.Parent = countryPanel
+
+local countryConfirmCorner = Instance.new("UICorner")
+countryConfirmCorner.CornerRadius = UDim.new(0, 8)
+countryConfirmCorner.Parent = countryConfirm
+
+-- Estado de la lista
+local cp = { rows = {}, headers = {}, collapsed = {}, selected = nil, taken = {}, built = false }
+
+local function applyCountryFilter()
+	local query = fold(countrySearch.Text)
+	local anyInCont = {}
+	for _, r in ipairs(cp.rows) do
+		local show
+		if query ~= "" then
+			show = string.find(r.folded, query, 1, true) ~= nil
+		else
+			show = not cp.collapsed[r.cont]
+		end
+		r.btn.Visible = show
+		if show then
+			anyInCont[r.cont] = true
+		end
+	end
+	for cont, h in pairs(cp.headers) do
+		local searching = query ~= ""
+		h.btn.Visible = (not searching) or anyInCont[cont] == true
+		local open = searching or not cp.collapsed[cont]
+		h.btn.Text = (if open then "▼ " else "▶ ") .. h.label
+	end
+end
+
+local function updateCountryPanel()
+	if not cp.built then
+		return
+	end
+	local taken = {}
+	if state.stats and state.stats.taken then
+		for _, t in ipairs(state.stats.taken) do
+			taken[t.cid] = t
+		end
+	end
+	cp.taken = taken
+
+	for _, r in ipairs(cp.rows) do
+		local t = taken[r.n.countryId]
+		if t then
+			local mine = t.nid == state.myId
+			r.status.Text = if mine then "⭐ TÚ" else "🔒 " .. t.name
+			r.status.TextColor3 = if mine then Color3.fromRGB(255, 220, 0) else Color3.fromRGB(255, 150, 120)
+			r.btn.BackgroundColor3 = if mine then Color3.fromRGB(72, 60, 10) else Color3.fromRGB(24, 28, 40)
+		else
+			r.status.Text = tostring(r.n.cells or 0) .. " celdas"
+			r.status.TextColor3 = Color3.fromRGB(140, 160, 190)
+			r.btn.BackgroundColor3 = if cp.selected == r.n
+				then Color3.fromRGB(0, 110, 170)
+				else Color3.fromRGB(30, 42, 64)
+		end
+	end
+
+	local alive = state.me and state.me.alive
+	if alive then
+		countryConfirm.Text = "✅ Ya gobiernas tu país"
+		countryConfirm.BackgroundColor3 = Color3.fromRGB(30, 80, 60)
+	elseif cp.selected then
+		countryConfirm.Text = "✅ Elegir " .. cp.selected.name
+		countryConfirm.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
+	else
+		countryConfirm.Text = "Selecciona un país de la lista"
+		countryConfirm.BackgroundColor3 = Color3.fromRGB(40, 52, 76)
+	end
+end
+
+local function makeCountryButton(order, height)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -4, 0, height)
+	b.LayoutOrder = order
+	b.BorderSizePixel = 0
+	b.Text = ""
+	b.AutoButtonColor = true
+	b.ZIndex = 32
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 5)
+	c.Parent = b
+	b.Parent = countryScroll
+	return b
+end
+
+local function buildCountryPanel()
+	for _, ch in ipairs(countryScroll:GetChildren()) do
+		if ch:IsA("GuiButton") then
+			ch:Destroy()
+		end
+	end
+	cp.rows, cp.headers, cp.collapsed, cp.selected, cp.taken = {}, {}, {}, nil, {}
+	cp.built = false
+	countrySearch.Text = ""
+
+	local byCont = {}
+	for _, n in ipairs(state.roster) do
+		if n.countryId then
+			local cont = n.continent or 6
+			byCont[cont] = byCont[cont] or {}
+			table.insert(byCont[cont], n)
+		end
+	end
+
+	for order, cont in ipairs(CONTINENT_ORDER) do
+		local list = byCont[cont]
+		if list then
+			table.sort(list, function(a, b)
+				return (a.cells or 0) > (b.cells or 0)
+			end)
+			cp.collapsed[cont] = true
+
+			local header = makeCountryButton(order * 1000, 28)
+			header.BackgroundColor3 = Color3.fromRGB(34, 60, 84)
+			header.Font = Enum.Font.GothamBlack
+			header.TextColor3 = Color3.fromRGB(190, 225, 255)
+			header.TextSize = 12
+			header.TextXAlignment = Enum.TextXAlignment.Left
+			local hp = Instance.new("UIPadding")
+			hp.PaddingLeft = UDim.new(0, 10)
+			hp.Parent = header
+			local label = (CONTINENT_NAMES[cont] or "Mundo") .. " · " .. #list
+			cp.headers[cont] = { btn = header, label = label }
+			header.MouseButton1Click:Connect(function()
+				cp.collapsed[cont] = not cp.collapsed[cont]
+				applyCountryFilter()
+			end)
+
+			for rank, n in ipairs(list) do
+				local btn = makeCountryButton(order * 1000 + rank, 26)
+				local nameLabel = Instance.new("TextLabel")
+				nameLabel.Size = UDim2.new(0.58, -10, 1, 0)
+				nameLabel.Position = UDim2.fromOffset(10, 0)
+				nameLabel.BackgroundTransparency = 1
+				nameLabel.Font = Enum.Font.GothamMedium
+				nameLabel.Text = n.name
+				nameLabel.TextColor3 = Color3.fromRGB(232, 240, 252)
+				nameLabel.TextSize = 12
+				nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+				nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				nameLabel.ZIndex = 33
+				nameLabel.Parent = btn
+
+				local status = Instance.new("TextLabel")
+				status.Size = UDim2.new(0.42, -8, 1, 0)
+				status.Position = UDim2.new(0.58, 0, 0, 0)
+				status.BackgroundTransparency = 1
+				status.Font = Enum.Font.Gotham
+				status.Text = ""
+				status.TextSize = 11
+				status.TextXAlignment = Enum.TextXAlignment.Right
+				status.TextTruncate = Enum.TextTruncate.AtEnd
+				status.ZIndex = 33
+				status.Parent = btn
+
+				table.insert(cp.rows, { btn = btn, status = status, n = n, cont = cont, folded = fold(n.name) })
+
+				btn.MouseButton1Click:Connect(function()
+					local t = cp.taken[n.countryId]
+					if t and t.nid ~= state.myId then
+						showToast("🔒 " .. n.name .. " ya lo eligió " .. t.name, Color3.fromRGB(255, 150, 120))
+						return
+					end
+					cp.selected = n
+					if n.capital and n.capital >= 0 then
+						centerOnCell(n.capital)
+					end
+					updateCountryPanel()
+				end)
+			end
+		end
+	end
+
+	cp.built = true
+	applyCountryFilter()
+	updateCountryPanel()
+end
+
+countrySearch:GetPropertyChangedSignal("Text"):Connect(applyCountryFilter)
+
+countryConfirm.MouseButton1Click:Connect(function()
+	if state.me and state.me.alive then
+		return
+	end
+	local n = cp.selected
+	if not n then
+		showToast("Elige un país de la lista", Color3.fromRGB(255, 200, 80))
+		return
+	end
+	WorldCommand:FireServer({ a = "SPAWN", cell = n.capital })
+	showToast("🌍 Eligiendo " .. n.name .. "...", Color3.fromRGB(0, 220, 255))
+end)
+
+btnCountries.MouseButton1Click:Connect(function()
+	countryPanel.Visible = not countryPanel.Visible
 end)
 
 -- ============================================================================
@@ -1203,12 +2278,22 @@ WorldInit.OnClientEvent:Connect(function(data)
 	updateMarkers()
 	updateMapTransform()
 
+	-- Modo Países vs Países: lista de selección por continente
+	state.mode = data.mode or "FREE"
+	btnCountries.Visible = state.mode == "COUNTRIES"
+	if state.mode == "COUNTRIES" then
+		buildCountryPanel()
+		countryPanel.Visible = true
+	else
+		countryPanel.Visible = false
+	end
+
 	state.initialized = true
 	showToast("¡Bienvenido al mapa de " .. state.planet .. "!", Color3.fromRGB(0, 210, 255))
 end)
 
 WorldDiff.OnClientEvent:Connect(function(diffBuf)
-	if not state.owner or not state.editableImage then
+	if not state.owner or (not state.editableImage and not state.blockMode) then
 		return
 	end
 
@@ -1229,10 +2314,26 @@ end)
 
 WorldStats.OnClientEvent:Connect(function(stats)
 	state.stats = stats
+	-- Búsquedas rápidas para el tooltip y el ranking
+	state.statById = {}
+	for _, e in ipairs(stats.nations or {}) do
+		state.statById[e.id] = e
+	end
+	state.humanById = {}
+	for _, t in ipairs(stats.taken or {}) do
+		state.humanById[t.nid] = t
+	end
+	if state.mode == "COUNTRIES" then
+		updateCountryPanel()
+	end
+	if lobbyScreen.Visible then
+		updateLobbyStatus()
+	end
 
 	-- Actualizar fase
 	if stats.phase == "SPAWN" then
-		phaseText.Text = "📍 FASE DE SPAWN: Elige tu capital (" .. math.ceil(stats.spawnTimer or 0) .. "s)"
+		local what = if state.mode == "COUNTRIES" then "Elige tu país" else "Elige tu capital"
+		phaseText.Text = "📍 FASE DE SPAWN: " .. what .. " (" .. math.ceil(stats.spawnTimer or 0) .. "s)"
 		phaseStroke.Color = Color3.fromRGB(0, 220, 255)
 	elseif stats.phase == "BATTLE" or stats.phase == "RUNNING" then
 		phaseText.Text = "⚔️ ¡GUERRA MUNDIAL! Conquista los continentes"
@@ -1252,6 +2353,8 @@ WorldStats.OnClientEvent:Connect(function(stats)
 	if stats.top then
 		for rank, entry in ipairs(stats.top) do
 			if rank <= 7 then
+				entry.isMe = entry.id == state.myId -- el servidor no envía esta marca
+				local rosterEntry = state.rosterById[entry.id]
 				local row = Instance.new("Frame")
 				row.Name = "Row_" .. rank
 				row.Size = UDim2.new(1, 0, 0, 22)
@@ -1279,12 +2382,28 @@ WorldStats.OnClientEvent:Connect(function(stats)
 				rankLbl.TextSize = 10
 				rankLbl.Parent = row
 
+				-- Muestra del color del país en el mapa + icono de jugador (👤) o bot (🤖)
+				local swatch = Instance.new("Frame")
+				swatch.Size = UDim2.fromOffset(10, 10)
+				swatch.Position = UDim2.fromOffset(24, 6)
+				swatch.BackgroundColor3 = if rosterEntry and rosterEntry.color
+					then rosterEntry.color
+					else Color3.fromRGB(150, 150, 150)
+				swatch.BorderSizePixel = 0
+				swatch.Parent = row
+				local swatchStroke = Instance.new("UIStroke")
+				swatchStroke.Color = Color3.fromRGB(240, 245, 255)
+				swatchStroke.Thickness = 1
+				swatchStroke.Parent = swatch
+
+				local kindIcon = if entry.isMe then "👑 [TÚ] " elseif entry.isBot == false then "👤 " else ""
 				local nameLbl = Instance.new("TextLabel")
-				nameLbl.Size = UDim2.new(1, -70, 1, 0)
-				nameLbl.Position = UDim2.fromOffset(24, 0)
+				nameLbl.Size = UDim2.new(1, -86, 1, 0)
+				nameLbl.Position = UDim2.fromOffset(40, 0)
 				nameLbl.BackgroundTransparency = 1
+				nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
 				nameLbl.Font = entry.isMe and Enum.Font.GothamBlack or Enum.Font.GothamBold
-				nameLbl.Text = (entry.isMe and "👑 [TÚ] " or "") .. entry.name
+				nameLbl.Text = kindIcon .. entry.name
 				nameLbl.TextColor3 = entry.isMe and Color3.fromRGB(255, 230, 50) or Color3.fromRGB(220, 230, 245)
 				nameLbl.TextSize = 10
 				nameLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -1323,10 +2442,6 @@ WorldNotice.OnClientEvent:Connect(function(msg)
 	showToast(msg, Color3.fromRGB(255, 220, 50))
 end)
 
--- Solicitar inicio de partida o unirse automáticamente
-task.spawn(function()
-	task.wait(0.5)
-	WorldCommand:FireServer({ a = "PLAY", planet = "EARTH", bots = 40, difficulty = "NORMAL" })
-end)
+-- La partida empieza cuando el jugador pulsa JUGAR en la pantalla de lobby (ver LobbyScreen).
 
 updateMapTransform()
