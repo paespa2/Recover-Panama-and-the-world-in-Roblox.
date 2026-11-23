@@ -1,0 +1,6 @@
+*.rbxlx.lock
+*.rbxl.lock
+/rea_ref/
+/target_repo/
+.DS_Store
+Thumbs.db
