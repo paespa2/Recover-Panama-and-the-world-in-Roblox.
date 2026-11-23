@@ -330,7 +330,7 @@ function Engine:removeBuilding(b)
 end
 
 function Engine:maxTroops(n)
-	return 4000 + n.cells * 30 + n.cities * 8000
+	return 10000 + n.cells * 25 + n.cities * 15000
 end
 
 function Engine:spawnNation(n, cell)
@@ -424,7 +424,7 @@ function Engine:hasAttack(n, target)
 	return false
 end
 
-function Engine:launchAttack(n, targetId, ratio)
+function Engine:launchAttack(n, targetId, ratio, targetCell)
 	if not n.alive then
 		return false, "No estás en el mapa"
 	end
@@ -447,7 +447,10 @@ function Engine:launchAttack(n, targetId, ratio)
 			existing = a
 		end
 	end
-	local atk = existing or { target = targetId, troops = 0, queue = {}, refills = 0 }
+	local atk = existing or { target = targetId, troops = 0, queue = {}, refills = 0, targetCell = targetCell }
+	if targetCell then
+		atk.targetCell = targetCell
+	end
 	if not existing then
 		self:fillQueue(n, atk)
 		if #atk.queue == 0 then
@@ -469,7 +472,7 @@ function Engine:processAttack(n, atk)
 			return true
 		end
 	end
-	if atk.troops < 5 then
+	if atk.troops < 2 then
 		return true
 	end
 	local queue = atk.queue
@@ -486,15 +489,39 @@ function Engine:processAttack(n, atk)
 
 	local owner, land = self.owner, self.land
 	local nb = self._nb
-	local maxCells = 3 + math.floor(math.sqrt(n.cells) * 0.6)
+	-- Escalado de velocidad estilo RoWorld / OpenFront: oleadas de conquista rápida
+	local maxCells = math.clamp(math.floor(math.sqrt(atk.troops) * 1.6) + math.floor(math.sqrt(n.cells) * 0.4), 8, 120)
 	local w = self.w
+	local tgtCell = atk.targetCell
 
 	for _ = 1, maxCells do
 		local qn = #queue
 		if qn == 0 then
 			break
 		end
-		local k = self.rng:NextInteger(1, qn)
+		local k = 1
+		if tgtCell then
+			-- Spearhead: dar prioridad a celdas en dirección al clic del jugador
+			local tx, ty = tgtCell % w, tgtCell // w
+			local bestDist = math.huge
+			local samples = math.min(qn, 8)
+			for _s = 1, samples do
+				local idx = self.rng:NextInteger(1, qn)
+				local c = queue[idx]
+				local cx, cy = c % w, c // w
+				local dx = math.abs(tx - cx)
+				dx = math.min(dx, w - dx)
+				local dy = math.abs(ty - cy)
+				local distSq = dx * dx + dy * dy
+				if distSq < bestDist then
+					bestDist = distSq
+					k = idx
+				end
+			end
+		else
+			k = self.rng:NextInteger(1, qn)
+		end
+
 		local cell = queue[k]
 		queue[k] = queue[qn]
 		queue[qn] = nil
@@ -508,11 +535,12 @@ function Engine:processAttack(n, atk)
 				end
 			end
 			if adjacent then
-				local cost = 3.2
+				-- Costo de expansión estilo RoWorld: la tierra libre (neutra) se expande muy rápido y fluido
+				local cost = 1.0
 				local density = 0
 				if tn then
 					density = tn.troops / math.max(1, tn.cells)
-					cost = 2.5 + density * 0.9
+					cost = 1.8 + density * 0.8
 					if tn.defenseAI then
 						cost *= 1.25
 					end
@@ -524,7 +552,7 @@ function Engine:processAttack(n, atk)
 							dx = math.min(dx, w - dx)
 							local dy = math.abs(py - cy)
 							if dx * dx + dy * dy <= POST_RADIUS * POST_RADIUS then
-								cost *= 2
+								cost *= 2.0
 								break
 							end
 						end
@@ -535,13 +563,13 @@ function Engine:processAttack(n, atk)
 				end
 				atk.troops -= cost
 				if tn then
-					tn.troops = math.max(0, tn.troops - density * 0.6)
+					tn.troops = math.max(0, tn.troops - density * 0.5)
 					tn.attackedBy[n.id] = self.time
 				end
 				self:setOwner(cell, n.id)
 				for q = 1, cnt do
 					local j = nb[q]
-					if buffer.readu8(owner, j) == target and buffer.readu8(land, j) == 1 and #queue < 6000 then
+					if buffer.readu8(owner, j) == target and buffer.readu8(land, j) == 1 and #queue < 25000 then
 						queue[#queue + 1] = j
 					end
 				end
@@ -597,7 +625,7 @@ function Engine:landing(n, cell, cost)
 end
 
 function Engine:playerAttack(n, cell, ratio)
-	if self.phase ~= "RUNNING" then
+	if self.phase ~= "BATTLE" and self.phase ~= "RUNNING" then
 		return false, "Espera a que termine la fase de aparición"
 	end
 	if buffer.readu8(self.land, cell) ~= 1 then
@@ -607,7 +635,7 @@ function Engine:playerAttack(n, cell, ratio)
 	if target == n.id then
 		return false, "Ese territorio ya es tuyo"
 	end
-	local ok, msg = self:launchAttack(n, target, ratio)
+	local ok, msg = self:launchAttack(n, target, ratio, cell)
 	if ok then
 		return true
 	end
@@ -617,7 +645,7 @@ function Engine:playerAttack(n, cell, ratio)
 			if self:cellDistance(port.cell, cell) <= PORT_RANGE then
 				local lok, lmsg = self:landing(n, cell, math.max(300, math.floor(n.troops * ratio * 0.5)))
 				if lok then
-					self:notify(n.userId, "⚓ ¡Desembarco exitoso! Ahora expándete desde la cabeza de playa")
+					self:notify(n.userId, "⚓ ¡Desembarco exitoso! Expandiéndote desde la costa")
 					return true
 				end
 				return false, lmsg
@@ -838,9 +866,13 @@ function Engine:economyStep()
 			else
 				local maxT = self:maxTroops(n)
 				local mult = if n.isBot then self.diff.growth else 1
-				local g = (8 + n.cells * 0.35) * math.max(0, 1 - n.troops / maxT) * mult
+				-- Curva de interés compuesto estilo Territorial.io / RoWorld:
+				-- Acumular tropas produce interés porcentual; expandir territorio sube el ingreso base y el tope.
+				local interest = n.troops * 0.038 * math.max(0, 1 - (n.troops / maxT))
+				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25) * mult
+				local g = (baseGrowth + interest) * math.max(0.1, 1 - (n.troops / (maxT * 1.05)))
 				n.troops = math.min(maxT, n.troops + g)
-				n.gold += 1.5 + n.cells * 0.05 + n.cities * 3
+				n.gold += 2.0 + n.cells * 0.08 + n.cities * 5
 
 				-- IA de DEFENSA: contraataca a quien te esté atacando
 				if n.defenseAI and #n.attacks < 3 then

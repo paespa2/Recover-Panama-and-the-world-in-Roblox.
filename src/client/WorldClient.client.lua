@@ -512,6 +512,9 @@ btnSilo.Position = UDim2.fromOffset(560, 2)
 local btnNuke = createActionButton("NUKE", "MISIL NUCLEAR", "900 Tropas", Color3.fromRGB(180, 70, 0), "☢️")
 btnNuke.Position = UDim2.fromOffset(700, 2)
 
+local btnRetreat = createActionButton("RETREAT", "RETIRADA", "Recuperar tropas", Color3.fromRGB(130, 40, 40), "🏳️")
+btnRetreat.Position = UDim2.fromOffset(840, 2)
+
 local function setActionMode(mode)
 	state.actionMode = mode
 	for id, item in pairs(actionButtons) do
@@ -547,6 +550,10 @@ btnSilo.MouseButton1Click:Connect(function()
 end)
 btnNuke.MouseButton1Click:Connect(function()
 	setActionMode("NUKE")
+end)
+btnRetreat.MouseButton1Click:Connect(function()
+	WorldCommand:FireServer({ a = "RETREAT" })
+	showToast("🏳️ Retirada ordenada: tropas devueltas al territorio", Color3.fromRGB(255, 180, 50))
 end)
 
 setActionMode("ATTACK")
@@ -1048,6 +1055,31 @@ local function handleMapClick(cell)
 	-- Fase de Batalla
 	if state.actionMode == "ATTACK" then
 		WorldCommand:FireServer({ a = "ATTACK", cell = cell, ratio = state.attackRatio })
+		-- Feedback visual inmediato: efecto onda de ataque en el cursor
+		local cx = cell % state.w
+		local cy = math.floor(cell / state.w)
+		local ripple = Instance.new("Frame")
+		ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+		ripple.Position = UDim2.fromScale((cx + 0.5) / state.w, (cy + 0.5) / state.h)
+		ripple.Size = UDim2.fromScale(6 / state.w, 6 / state.h)
+		ripple.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+		ripple.BackgroundTransparency = 0.2
+		ripple.BorderSizePixel = 0
+		ripple.ZIndex = 25
+		ripple.Parent = mapCanvas
+
+		local rc = Instance.new("UICorner")
+		rc.CornerRadius = UDim.new(1, 0)
+		rc.Parent = ripple
+
+		local tw = TweenService:Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromScale(28 / state.w, 28 / state.h),
+			BackgroundTransparency = 1,
+		})
+		tw:Play()
+		tw.Completed:Connect(function()
+			ripple:Destroy()
+		end)
 	elseif state.actionMode:sub(1, 6) == "BUILD_" then
 		local kind = state.actionMode:sub(7)
 		WorldCommand:FireServer({ a = "BUILD", kind = kind, cell = cell })
