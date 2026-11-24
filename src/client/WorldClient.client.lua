@@ -1256,25 +1256,28 @@ planetNote.TextYAlignment = Enum.TextYAlignment.Top
 
 local PLANETS = {
 	{ id = "EARTH", name = "🌍 Tierra" },
+	{ id = "WORLD", name = "🌐 World (FW)" },
+	{ id = "EUROPE", name = "🏰 Europa (FW)" },
+	{ id = "ASIA", name = "🏯 Asia (FW)" },
+	{ id = "AFRICA", name = "🦁 África (FW)" },
+	{ id = "MENA", name = "🏜️ Medio Oriente" },
+	{ id = "OCEANIA", name = "🏝️ Oceanía" },
 	{ id = "PANGEA", name = "🦕 Pangea" },
 	{ id = "MARS", name = "🔴 Marte" },
-	{ id = "MOON", name = "🌕 Luna" },
-	{ id = "VENUS", name = "🪐 Venus" },
-	{ id = "ANDROMEDA", name = "🌌 Andrómeda" },
 }
 local planetChips = {}
 for i, p in ipairs(PLANETS) do
 	local col = (i - 1) % 3
 	local row = (i - 1) // 3
 	local chip = Instance.new("TextButton")
-	chip.Position = UDim2.fromOffset(rightX + col * 134, 152 + row * 40)
-	chip.Size = UDim2.fromOffset(128, 34)
+	chip.Position = UDim2.fromOffset(rightX + col * 134, 142 + row * 34)
+	chip.Size = UDim2.fromOffset(128, 30)
 	chip.BackgroundColor3 = COLOR_CHIP
 	chip.BorderSizePixel = 0
 	chip.Font = Enum.Font.GothamBold
 	chip.Text = p.name
 	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
-	chip.TextSize = 12
+	chip.TextSize = 11
 	chip.ZIndex = 62
 	chip.Parent = lobbyCard
 	roundCorners(chip, 8)

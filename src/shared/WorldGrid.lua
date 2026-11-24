@@ -94,9 +94,82 @@ WorldGrid.PLANETS = {
 		landA = { 255, 232, 176 },
 		landB = { 150, 120, 255 },
 	},
+	WORLD = {
+		id = "WORLD",
+		name = "Mundo FrontWars (61 Naciones)",
+		icon = "🌐",
+		kind = "frontwars",
+		mapId = "world",
+		ocean = { 14, 58, 110 },
+		mid = { 24, 82, 138 },
+		shallow = { 46, 118, 176 },
+	},
+	EUROPE = {
+		id = "EUROPE",
+		name = "Europa FrontWars (49 Naciones)",
+		icon = "🏰",
+		kind = "frontwars",
+		mapId = "europe",
+		ocean = { 18, 54, 104 },
+		mid = { 30, 78, 132 },
+		shallow = { 50, 112, 168 },
+	},
+	ASIA = {
+		id = "ASIA",
+		name = "Asia FrontWars (25 Naciones)",
+		icon = "🏯",
+		kind = "frontwars",
+		mapId = "asia",
+		ocean = { 16, 62, 115 },
+		mid = { 28, 86, 142 },
+		shallow = { 48, 122, 180 },
+	},
+	AFRICA = {
+		id = "AFRICA",
+		name = "África FrontWars (36 Naciones)",
+		icon = "🦁",
+		kind = "frontwars",
+		mapId = "africa",
+		ocean = { 14, 60, 112 },
+		mid = { 26, 84, 140 },
+		shallow = { 46, 120, 178 },
+	},
+	MENA = {
+		id = "MENA",
+		name = "Medio Oriente FrontWars (35 Naciones)",
+		icon = "🏜️",
+		kind = "frontwars",
+		mapId = "mena",
+		ocean = { 18, 64, 118 },
+		mid = { 32, 88, 146 },
+		shallow = { 52, 126, 184 },
+	},
+	OCEANIA = {
+		id = "OCEANIA",
+		name = "Oceanía FrontWars (32 Naciones)",
+		icon = "🏝️",
+		kind = "frontwars",
+		mapId = "oceania",
+		ocean = { 12, 70, 124 },
+		mid = { 24, 96, 154 },
+		shallow = { 48, 136, 196 },
+	},
 }
 
-WorldGrid.PLANET_ORDER = { "EARTH", "PANGEA", "MARS", "MOON", "VENUS", "ANDROMEDA" }
+WorldGrid.PLANET_ORDER = {
+	"EARTH",
+	"WORLD",
+	"EUROPE",
+	"ASIA",
+	"AFRICA",
+	"MENA",
+	"OCEANIA",
+	"PANGEA",
+	"MARS",
+	"MOON",
+	"VENUS",
+	"ANDROMEDA",
+}
 
 -- ============================================================================
 -- POLÍGONOS DE LA TIERRA (lon, lat, lon, lat, ...)
@@ -1586,6 +1659,27 @@ function WorldGrid.Generate(planetId)
 				end
 			end
 		end
+	elseif def.kind == "frontwars" then
+		-- Carga el mapa de pixeles autentico de FrontWars.io desde el modulo modular
+		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
+		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
+		if mapModule then
+			local mapData = require(mapModule)
+			local maskBuf = buffer.frombase64(mapData.maskB64)
+			local mw, mh = mapData.w, mapData.h
+			for y = 0, H - 1 do
+				local my = math.floor((y / H) * mh)
+				for x = 0, W - 1 do
+					local mx = math.floor((x / W) * mw)
+					local bitIdx = my * mw + mx
+					local byteVal = buffer.readu8(maskBuf, bitIdx // 8)
+					local bit = bit.band(bit.rshift(byteVal, bitIdx % 8), 1)
+					if bit == 1 then
+						buffer.writeu8(land, y * W + x, 1)
+					end
+				end
+			end
+		end
 	end
 
 	local count = 0
@@ -1820,7 +1914,7 @@ function WorldGrid.BuildBase(planetId, land)
 				local dz_dy = (hD - hU) * 0.5
 				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
 
-				if def.kind == "earth" then
+				if def.kind == "earth" or def.kind == "frontwars" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
 						g = math.min(255, g + 14)
