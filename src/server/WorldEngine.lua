@@ -31,25 +31,58 @@ local POST_RADIUS = 20
 local PORT_RANGE = 140
 
 Engine.COSTS = {
-	City = 500,
-	Port = 400,
-	Post = 350,
-	Silo = 1200,
-	Farm = 300, -- Conqur.io: Granja (+crecimiento de población/reclutamiento)
-	Mine = 450, -- Conqur.io: Mina (+ingreso constante de oro)
-	Airbase = 800, -- Conqur.io: Base aérea (ataques aéreos de largo alcance)
+	City = 500, -- Aumenta el límite de tropas / capacidad máxima
+	Factory = 600, -- FrontWars: Fábrica / Enlaces ferroviarios de trenes (+Oro pasivo entre ciudades)
+	Port = 400, -- Puerto para comercio marítimo y barcos de guerra
+	Post = 350, -- Puesto de defensa (blinda fronteras cercanas)
+	Silo = 1200, -- Silo de misiles para lanzar bombas nucleares
+	SAM = 750, -- FrontWars: Sistema antimisiles SAM Launcher (intercepta bombas nucleares)
+	Warship = 500, -- FrontWars: Barco de guerra (patrulla costera y destruye barcos enemigos)
+	Farm = 300, -- Granja (+Tropas por segundo)
+	Mine = 450, -- Mina (+Oro por segundo)
+	Airbase = 800, -- Base aérea
 }
 Engine.NUKE_COST = NUKE_COST
 local NUKE_COOLDOWN = 45
 
--- Armas bélicas (poderes que se apuntan con un clic). Todas cuestan oro y tienen enfriamiento propio.
---   radius    radio del área en celdas        destroy   fracción de celdas enemigas que pierden dueño
---   troopHit  fracción de tropas que pierden las naciones alcanzadas (además de las celdas perdidas)
---   impacts   número de impactos (el meteorito cae en racimo)        buildings   destruye todos los edificios del área
+-- Armas y Bombas de FrontWars.io:
+-- 1. Atom Bomb (pequeña explosión)
+-- 2. Hydrogen Bomb (gran explosión)
+-- 3. MIRV (ogiva múltiple devastadora que aniquila la capital enemiga)
 Engine.NUKE_RADIUS = NUKE_RADIUS
 Engine.NUKE_COOLDOWN = NUKE_COOLDOWN
 Engine.WEAPONS = {
-	BOMB = { name = "Bomba", icon = "💣", cost = 250, radius = 5, cooldown = 6, destroy = 1.0 },
+	ATOM_BOMB = {
+		name = "Bomba Atómica",
+		icon = "☢️",
+		cost = 600,
+		radius = 9,
+		cooldown = 18,
+		destroy = 0.85,
+		troopHit = 0.4,
+	},
+	HYDROGEN_BOMB = {
+		name = "Bomba de Hidrógeno",
+		icon = "💥",
+		cost = 1200,
+		radius = 18,
+		cooldown = 35,
+		destroy = 1.0,
+		troopHit = 0.7,
+		buildings = true,
+	},
+	MIRV = {
+		name = "Misil MIRV",
+		icon = "🚀",
+		cost = 2200,
+		radius = 26,
+		cooldown = 60,
+		destroy = 1.0,
+		troopHit = 0.9,
+		impacts = 5,
+		buildings = true,
+	},
+	BOMB = { name = "Bomba Convencional", icon = "💣", cost = 250, radius = 5, cooldown = 6, destroy = 1.0 },
 	ARTILLERY = {
 		name = "Artillería",
 		icon = "🎯",
@@ -70,7 +103,7 @@ Engine.WEAPONS = {
 		buildings = true,
 	},
 }
-Engine.WEAPON_ORDER = { "BOMB", "ARTILLERY", "METEOR", "QUAKE" }
+Engine.WEAPON_ORDER = { "ATOM_BOMB", "HYDROGEN_BOMB", "MIRV", "BOMB", "ARTILLERY", "METEOR", "QUAKE" }
 
 local DIFFICULTY = {
 	EASY = { think = 7.0, maxAttacks = 1, minRatio = 0.15, maxRatio = 0.3, growth = 0.7, edge = 1.8 },
@@ -1346,6 +1379,13 @@ function Engine:build(n, kind, cell)
 		table.insert(n.posts, b)
 	elseif kind == "Port" then
 		table.insert(n.ports, b)
+	elseif kind == "Factory" then
+		n.factories = (n.factories or 0) + 1
+	elseif kind == "SAM" then
+		n.sams = n.sams or {}
+		table.insert(n.sams, b)
+	elseif kind == "Warship" then
+		n.warships = (n.warships or 0) + 1
 	elseif kind == "Farm" then
 		n.farms = (n.farms or 0) + 1
 	elseif kind == "Mine" then
@@ -1418,6 +1458,32 @@ function Engine:nuke(n, cell)
 	if waitLeft > 0 then
 		return false, string.format("El misil nuclear se recarga (%ds)", math.ceil(waitLeft))
 	end
+
+	-- FrontWars: Comprobar interceptación por SAM Launcher enemigo
+	local w, h = self.w, self.h
+	local cx, cy = cell % w, cell // w
+	for _, en in ipairs(self.list) do
+		if en.alive and en.id ~= n.id and not self:isAlly(n, en) and en.sams and #en.sams > 0 then
+			for samIdx, sam in ipairs(en.sams) do
+				local sx, sy = sam.cell % w, sam.cell // w
+				local dx = math.abs(sx - cx)
+				dx = math.min(dx, w - dx)
+				local dy = math.abs(sy - cy)
+				if dx * dx + dy * dy <= 28 * 28 then -- Radio de interceptación SAM: 28 celdas
+					n.gold -= NUKE_COST
+					n.weaponReady.NUKE = self.time + NUKE_COOLDOWN
+					self:notify(
+						n.userId,
+						"🛡️ ¡Tu misil nuclear fue INTERCEPTADO por un SAM Launcher de " .. en.name .. "!"
+					)
+					self:notify(en.userId, "🚀 ¡Tu sistema SAM interceptó y destruyó un misil nuclear enemigo!")
+					self:fx("ARTILLERY", cell, 4)
+					return true
+				end
+			end
+		end
+	end
+
 	n.gold -= NUKE_COST
 	n.weaponReady.NUKE = self.time + NUKE_COOLDOWN
 	self:fx("NUKE", cell, NUKE_RADIUS)
@@ -1750,16 +1816,17 @@ function Engine:economyStep()
 			else
 				local maxT = self:maxTroops(n)
 				local mult = if n.isBot then self.diff.growth else 1
-				-- Curva de interés compuesto estilo Territorial.io / RoWorld / Conqur.io:
-				-- Granja (+25 tropas base por segundo), Mina (+8 oro por segundo)
+				-- Curva de interés compuesto estilo Territorial.io / FrontWars.io:
+				-- Granja (+35 tropas base/s), Mina (+10 oro/s), Fábrica con enlace de tren (+15 oro/s), Barcos de guerra (+5 defensa)
 				local farms = n.farms or 0
 				local mines = n.mines or 0
+				local factories = n.factories or 0
 				local interest = n.troops * 0.038 * math.max(0, 1 - (n.troops / maxT))
 				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25 + farms * 35) * mult
 				local g = (baseGrowth + interest) * math.max(0.1, 1 - (n.troops / (maxT * 1.05)))
 				local troopsBefore = n.troops
 				n.troops = math.min(maxT, n.troops + g)
-				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5 + mines * 10
+				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5 + mines * 10 + factories * 15 + (#n.ports * 6)
 				n.gold += goldGain
 				-- Ritmos reales por segundo (el HUD los muestra tal cual; antes usaba una fórmula inventada)
 				n.troopRate = n.troops - troopsBefore

@@ -587,39 +587,57 @@ end
 local btnAttack = createActionButton("ATTACK", "ATACAR", "Clic en frontera", Color3.fromRGB(200, 40, 40), "⚔️")
 btnAttack.Position = UDim2.fromOffset(0, 2)
 
-local btnCity = createActionButton("BUILD_City", "CIUDAD", "$500 Oro (+Oro)", Color3.fromRGB(40, 110, 180), "🏢")
+local btnCity = createActionButton("BUILD_City", "CIUDAD", "$500 (+Capacidad)", Color3.fromRGB(40, 110, 180), "🏢")
 btnCity.Position = UDim2.fromOffset(140, 2)
 
-local btnPort = createActionButton("BUILD_Port", "PUERTO", "$400 Oro (Mar)", Color3.fromRGB(30, 130, 150), "⚓")
-btnPort.Position = UDim2.fromOffset(280, 2)
+local btnFactory =
+	createActionButton("BUILD_Factory", "FÁBRICA", "$600 (+Trenes/Oro)", Color3.fromRGB(150, 70, 30), "🏭")
+btnFactory.Position = UDim2.fromOffset(280, 2)
+
+local btnPort = createActionButton("BUILD_Port", "PUERTO", "$400 (Mar/Comercio)", Color3.fromRGB(30, 130, 150), "⚓")
+btnPort.Position = UDim2.fromOffset(420, 2)
 
 local btnPost =
-	createActionButton("BUILD_Post", "PUESTO DEF.", "$350 Oro (Torre)", Color3.fromRGB(150, 110, 20), "🛡️")
-btnPost.Position = UDim2.fromOffset(420, 2)
+	createActionButton("BUILD_Post", "PUESTO DEF.", "$350 (Torre x2)", Color3.fromRGB(150, 110, 20), "🛡️")
+btnPost.Position = UDim2.fromOffset(560, 2)
 
-local btnFarm = createActionButton("BUILD_Farm", "GRANJA", "$300 Oro (+Tropas)", Color3.fromRGB(40, 150, 60), "🌾")
-btnFarm.Position = UDim2.fromOffset(560, 2)
+local btnSAM = createActionButton("BUILD_SAM", "LANZADOR SAM", "$750 (Antimisil)", Color3.fromRGB(40, 140, 140), "📡")
+btnSAM.Position = UDim2.fromOffset(700, 2)
 
-local btnMine = createActionButton("BUILD_Mine", "MINA", "$450 Oro (++Oro)", Color3.fromRGB(180, 130, 20), "⛏️")
-btnMine.Position = UDim2.fromOffset(700, 2)
+local btnWarship =
+	createActionButton("BUILD_Warship", "NAVÍO GUERRA", "$500 (Patrulla)", Color3.fromRGB(20, 80, 160), "🚢")
+btnWarship.Position = UDim2.fromOffset(840, 2)
+
+local btnFarm = createActionButton("BUILD_Farm", "GRANJA", "$300 (+35 Tropas)", Color3.fromRGB(40, 150, 60), "🌾")
+btnFarm.Position = UDim2.fromOffset(980, 2)
+
+local btnMine = createActionButton("BUILD_Mine", "MINA", "$450 (++10 Oro)", Color3.fromRGB(180, 130, 20), "⛏️")
+btnMine.Position = UDim2.fromOffset(1120, 2)
 
 local btnAirbase =
-	createActionButton("BUILD_Airbase", "BASE AÉREA", "$800 Oro (Aéreo)", Color3.fromRGB(80, 90, 160), "✈️")
-btnAirbase.Position = UDim2.fromOffset(840, 2)
+	createActionButton("BUILD_Airbase", "BASE AÉREA", "$800 (Aéreo)", Color3.fromRGB(80, 90, 160), "✈️")
+btnAirbase.Position = UDim2.fromOffset(1260, 2)
 
 local btnSilo = createActionButton("BUILD_Silo", "SILO MISIL", "$1200 Oro", Color3.fromRGB(100, 50, 140), "🚀")
-btnSilo.Position = UDim2.fromOffset(980, 2)
+btnSilo.Position = UDim2.fromOffset(1400, 2)
 
-local btnNuke = createActionButton("NUKE", "MISIL NUCLEAR", "$900 Oro (Silo)", Color3.fromRGB(180, 70, 0), "☢️")
-btnNuke.Position = UDim2.fromOffset(1120, 2)
+local btnAtom =
+	createActionButton("WEAPON_ATOM_BOMB", "BOMBA ATÓMICA", "$600 Oro", Color3.fromRGB(200, 100, 0), "☢️")
+btnAtom.Position = UDim2.fromOffset(1540, 2)
+
+local btnHBomb = createActionButton("WEAPON_HYDROGEN_BOMB", "BOMBA H", "$1200 Oro", Color3.fromRGB(220, 40, 0), "💥")
+btnHBomb.Position = UDim2.fromOffset(1680, 2)
+
+local btnMIRV = createActionButton("WEAPON_MIRV", "MISIL MIRV", "$2200 Oro", Color3.fromRGB(160, 20, 70), "☄️")
+btnMIRV.Position = UDim2.fromOffset(1820, 2)
 
 local btnDemolish = createActionButton("DEMOLISH", "DEMOLER", "60% Reembolso", Color3.fromRGB(110, 80, 70), "🏚️")
-btnDemolish.Position = UDim2.fromOffset(1260, 2)
+btnDemolish.Position = UDim2.fromOffset(1960, 2)
 
 local btnRetreat = createActionButton("RETREAT", "RETIRADA", "Recuperar tropas", Color3.fromRGB(130, 40, 40), "🏳️")
-btnRetreat.Position = UDim2.fromOffset(1400, 2)
+btnRetreat.Position = UDim2.fromOffset(2100, 2)
 
-actionsRow.CanvasSize = UDim2.fromOffset(1560, 0)
+actionsRow.CanvasSize = UDim2.fromOffset(2260, 0)
 
 local function setActionMode(mode)
 	state.actionMode = mode
@@ -645,11 +663,20 @@ end)
 btnCity.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_City")
 end)
+btnFactory.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_Factory")
+end)
 btnPort.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Port")
 end)
 btnPost.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Post")
+end)
+btnSAM.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_SAM")
+end)
+btnWarship.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_Warship")
 end)
 btnFarm.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Farm")
@@ -663,8 +690,14 @@ end)
 btnSilo.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Silo")
 end)
-btnNuke.MouseButton1Click:Connect(function()
-	setActionMode("NUKE")
+btnAtom.MouseButton1Click:Connect(function()
+	setActionMode("WEAPON_ATOM_BOMB")
+end)
+btnHBomb.MouseButton1Click:Connect(function()
+	setActionMode("WEAPON_HYDROGEN_BOMB")
+end)
+btnMIRV.MouseButton1Click:Connect(function()
+	setActionMode("WEAPON_MIRV")
 end)
 btnDemolish.MouseButton1Click:Connect(function()
 	setActionMode("DEMOLISH")
@@ -2557,6 +2590,43 @@ RunService.RenderStepped:Connect(function(dt)
 		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 / (1 + 2.5 * dt))
 	elseif UserInputService:IsKeyDown(Enum.KeyCode.H) then
 		fitToScreen()
+	end
+end)
+
+-- FrontWars Hotkeys:
+-- 1: Ciudad, 2: Fábrica, 3: Puerto, 4: Puesto Def., 5: SAM, 6: Barco Guerra, 7: Granja, 8: Mina, 9: Base Aérea, 0: Silo
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.One then
+		setActionMode("BUILD_City")
+	elseif input.KeyCode == Enum.KeyCode.Two then
+		setActionMode("BUILD_Factory")
+	elseif input.KeyCode == Enum.KeyCode.Three then
+		setActionMode("BUILD_Port")
+	elseif input.KeyCode == Enum.KeyCode.Four then
+		setActionMode("BUILD_Post")
+	elseif input.KeyCode == Enum.KeyCode.Five then
+		setActionMode("BUILD_SAM")
+	elseif input.KeyCode == Enum.KeyCode.Six then
+		setActionMode("BUILD_Warship")
+	elseif input.KeyCode == Enum.KeyCode.Seven then
+		setActionMode("BUILD_Farm")
+	elseif input.KeyCode == Enum.KeyCode.Eight then
+		setActionMode("BUILD_Mine")
+	elseif input.KeyCode == Enum.KeyCode.Nine then
+		setActionMode("BUILD_Airbase")
+	elseif input.KeyCode == Enum.KeyCode.Zero then
+		setActionMode("BUILD_Silo")
+	elseif input.KeyCode == Enum.KeyCode.R then
+		setActionMode("RETREAT")
+		WorldCommand:FireServer({ a = "RETREAT" })
+		state.showToast("🏳️ Retirada ordenada: tropas devueltas al territorio", Color3.fromRGB(255, 180, 50))
+	elseif input.KeyCode == Enum.KeyCode.G then
+		setActionMode("ATTACK")
+	elseif input.KeyCode == Enum.KeyCode.X then
+		setActionMode("DEMOLISH")
 	end
 end)
 
