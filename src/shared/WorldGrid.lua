@@ -1606,6 +1606,45 @@ function WorldGrid.LatOfRow(y)
 	return LAT_TOP - (y + 0.5) * (LAT_TOP - LAT_BOT) / H
 end
 
+-- Decodificador Base64 ultraligero y nativo para mapas de bits de FrontWars
+local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local B64_LUT = {}
+for i = 1, #B64_CHARS do
+	B64_LUT[string.byte(B64_CHARS, i)] = i - 1
+end
+
+local function decodeBase64ToBuffer(b64)
+	local len = #b64
+	local out = buffer.create(math.ceil(len * 3 / 4))
+	local outPos = 0
+	local i = 1
+	while i <= len do
+		local b1_raw = string.byte(b64, i)
+		if not b1_raw then
+			break
+		end
+		local c1 = B64_LUT[b1_raw] or 0
+		local c2 = B64_LUT[string.byte(b64, i + 1) or 65] or 0
+		local c3 = B64_LUT[string.byte(b64, i + 2) or 65] or 0
+		local c4 = B64_LUT[string.byte(b64, i + 3) or 65] or 0
+		i += 4
+
+		local b1 = bit32.bor(bit32.lshift(c1, 2), bit32.rshift(c2, 4))
+		local b2 = bit32.bor(bit32.lshift(bit32.band(c2, 15), 4), bit32.rshift(c3, 2))
+		local b3 = bit32.bor(bit32.lshift(bit32.band(c3, 3), 6), c4)
+
+		buffer.writeu8(out, outPos, b1)
+		if outPos + 1 < buffer.len(out) then
+			buffer.writeu8(out, outPos + 1, b2)
+		end
+		if outPos + 2 < buffer.len(out) then
+			buffer.writeu8(out, outPos + 2, b3)
+		end
+		outPos += 3
+	end
+	return out
+end
+
 -- ============================================================================
 -- GENERACIÓN DE LA MÁSCARA DE TIERRA
 -- ============================================================================
@@ -1665,7 +1704,7 @@ function WorldGrid.Generate(planetId)
 		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
 		if mapModule then
 			local mapData = require(mapModule)
-			local maskBuf = buffer.frombase64(mapData.maskB64)
+			local maskBuf = decodeBase64ToBuffer(mapData.maskB64)
 			local mw, mh = mapData.w, mapData.h
 			for y = 0, H - 1 do
 				local my = math.floor((y / H) * mh)

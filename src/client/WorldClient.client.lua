@@ -940,7 +940,7 @@ do
 		POP = "rbxasset://sounds/action_get_up.mp3",
 		EXPAND = "rbxasset://sounds/action_swim.mp3",
 		BUILD = "rbxasset://sounds/button.mp3",
-		SPAWN = "rbxasset://sounds/bell.wav",
+		SPAWN = "rbxasset://sounds/electronicpingshort.wav",
 		ATTACK = "rbxasset://sounds/action_jump.mp3",
 		ALARM = "rbxasset://sounds/electronicpingshort.wav",
 		BOMB = "rbxasset://sounds/impact_explosion_01.mp3",
@@ -2874,7 +2874,7 @@ end
 local MAX_ZOOM = 8.0
 local zoomTarget = state.zoom
 local zoomAnchor = Vector2.zero
-local requestZoom, fitToScreen, focusCell -- se definen tras los controles
+local requestZoom, fitToScreen, focusCell, panTarget -- se definen tras los controles
 
 -- Zoom que muestra el mundo entero; el mínimo permitido es algo menor para dejar un margen
 local function fitZoom()
@@ -2889,6 +2889,7 @@ local function applyZoom(screenPos, factor)
 	local f = newZoom / state.zoom
 	local center = mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2 + state.pan
 	state.pan = state.pan + (screenPos - center) * (1 - f)
+	panTarget = nil
 	state.zoom = newZoom
 	clampPan()
 	updateMapTransform()
@@ -2951,6 +2952,7 @@ UserInputService.InputChanged:Connect(function(input)
 			drag.moved = true
 		end
 		if drag.moved then
+			panTarget = nil
 			state.pan = drag.startPan + delta
 			clampPan()
 			updateMapTransform()
@@ -3059,11 +3061,39 @@ function requestZoom(screenPos, factor)
 	zoomAnchor = screenPos
 end
 
--- Cada fotograma el zoom se acerca al objetivo (animación suave de acercar y alejar)
+-- Cada fotograma el zoom y el paneo se acercan al objetivo (animación ultra fluida a 60 FPS)
 RunService.RenderStepped:Connect(function(dt)
 	local diff = zoomTarget - state.zoom
 	if math.abs(diff) > 0.0004 then
 		applyZoom(zoomAnchor, (state.zoom + diff * math.min(1, dt * 14)) / state.zoom)
+	end
+	if panTarget then
+		local diffP = panTarget - state.pan
+		if diffP.Magnitude > 0.6 then
+			state.pan = state.pan + diffP * math.min(1, dt * 14)
+			clampPan()
+			updateMapTransform()
+		else
+			state.pan = panTarget
+			panTarget = nil
+		end
+	end
+	if state.targetTroops and state.displayedTroops then
+		local dTr = state.targetTroops - state.displayedTroops
+		if math.abs(dTr) > 0.4 then
+			state.displayedTroops += dTr * math.min(1, dt * 12)
+			if math.abs(state.targetTroops - state.displayedTroops) < 1 then
+				state.displayedTroops = state.targetTroops
+			end
+			local roundTr = math.floor(state.displayedTroops + 0.5)
+			troopsCard.Text = string.format(
+				"⚔️ %s / %s (⚡+%.1f%%/s)%s",
+				troopText(roundTr),
+				troopText(state.maxTroops or 10000),
+				state.troopPct or 0,
+				if state.isCapped then " ⚠️ CAP" else ""
+			)
+		end
 	end
 end)
 
@@ -3072,18 +3102,18 @@ function fitToScreen()
 	state.zoom = fitZoom()
 	zoomTarget = state.zoom
 	state.pan = Vector2.zero
+	panTarget = nil
 	updateMapTransform()
 end
 
--- Centra la vista en una celda con el zoom indicado (sin animar)
+-- Centra la vista en una celda con interpolación suave
 function focusCell(cell, zoom)
-	state.zoom = math.clamp(zoom or state.zoom, fitZoom() * 0.85, MAX_ZOOM)
-	zoomTarget = state.zoom
+	local z = zoom or state.zoom
+	zoomTarget = math.clamp(z, fitZoom() * 0.85, MAX_ZOOM)
+	zoomAnchor = mapContainer.AbsoluteSize / 2
 	local normX = (cell % state.w + 0.5) / state.w - 0.5
 	local normY = (cell // state.w + 0.5) / state.h - 0.5
-	state.pan = Vector2.new(-normX * BASE_WIDTH * state.zoom, -normY * BASE_HEIGHT * state.zoom)
-	clampPan()
-	updateMapTransform()
+	panTarget = Vector2.new(-normX * BASE_WIDTH * zoomTarget, -normY * BASE_HEIGHT * zoomTarget)
 end
 
 -- Botones de zoom (útiles sobre todo en pantallas táctiles): acercar, alejar y ver todo el mundo
@@ -5074,9 +5104,17 @@ WorldMe.OnClientEvent:Connect(function(meData)
 	local pct = if tr > 0 then (trRate / tr) * 100 else 0
 	local isCapped = tr >= maxTr * 0.85
 
+	state.targetTroops = tr
+	state.maxTroops = maxTr
+	state.troopPct = pct
+	state.isCapped = isCapped
+	if not state.displayedTroops then
+		state.displayedTroops = tr
+	end
+
 	troopsCard.Text = string.format(
 		"⚔️ %s / %s (⚡+%.1f%%/s)%s",
-		troopText(tr),
+		troopText(math.floor(state.displayedTroops + 0.5)),
 		troopText(maxTr),
 		pct,
 		if isCapped then " ⚠️ CAP" else ""
