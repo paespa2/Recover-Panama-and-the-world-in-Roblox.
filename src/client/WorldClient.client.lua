@@ -59,6 +59,8 @@ local DEEP_OCEAN_COLOR = Color3.fromRGB(10, 22, 42)
 local UNCLAIMED_LAND = Color3.fromRGB(72, 85, 78)
 local UNCLAIMED_BORDER = Color3.fromRGB(52, 65, 58)
 local HUMAN_AURA_COLOR = Color3.fromRGB(255, 220, 0)
+local BASE_WIDTH = 2400
+local BASE_HEIGHT = 1000
 
 -- ============================================================================
 -- ESTADO DEL CLIENTE
@@ -195,7 +197,7 @@ cellCursor.Parent = mapCanvas
 -- ============================================================================
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 54)
+topBar.Size = UDim2.new(1, 0, 0, 44)
 topBar.Position = UDim2.fromOffset(0, 0)
 topBar.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
 topBar.BackgroundTransparency = 0.15
@@ -215,7 +217,7 @@ titleLabel.Size = UDim2.new(0, 280, 1, 0)
 titleLabel.Position = UDim2.fromOffset(276, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBlack
-titleLabel.Text = "🌍 RECUPERAR PANAMÁ Y EL MUNDO"
+titleLabel.Text = "⚔️ FRONTWARS | RECUPERAR PANAMÁ"
 titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 titleLabel.TextSize = 15
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -227,19 +229,19 @@ local phaseBadge = Instance.new("Frame")
 phaseBadge.Name = "PhaseBadge"
 phaseBadge.AnchorPoint = Vector2.new(0.5, 0.5)
 phaseBadge.Position = UDim2.fromScale(0.5, 0.5)
-phaseBadge.Size = UDim2.fromOffset(360, 36)
+phaseBadge.Size = UDim2.fromOffset(360, 30)
 phaseBadge.BackgroundColor3 = Color3.fromRGB(25, 35, 55)
 phaseBadge.BorderSizePixel = 0
 phaseBadge.ZIndex = 21
 phaseBadge.Parent = topBar
 
 local phaseCorner = Instance.new("UICorner")
-phaseCorner.CornerRadius = UDim.new(0, 8)
+phaseCorner.CornerRadius = UDim.new(0, 4)
 phaseCorner.Parent = phaseBadge
 
 local phaseStroke = Instance.new("UIStroke")
 phaseStroke.Color = Color3.fromRGB(0, 210, 255)
-phaseStroke.Thickness = 1.5
+phaseStroke.Thickness = 1
 phaseStroke.Parent = phaseBadge
 
 local phaseText = Instance.new("TextLabel")
@@ -269,7 +271,7 @@ btnLobby.ZIndex = 21
 btnLobby.Parent = topBar
 
 local btnLobbyCorner = Instance.new("UICorner")
-btnLobbyCorner.CornerRadius = UDim.new(0, 6)
+btnLobbyCorner.CornerRadius = UDim.new(0, 4)
 btnLobbyCorner.Parent = btnLobby
 
 -- Botón Centrar Cámara
@@ -288,7 +290,7 @@ btnCenter.ZIndex = 21
 btnCenter.Parent = topBar
 
 local btnCenterCorner = Instance.new("UICorner")
-btnCenterCorner.CornerRadius = UDim.new(0, 6)
+btnCenterCorner.CornerRadius = UDim.new(0, 4)
 btnCenterCorner.Parent = btnCenter
 
 -- ============================================================================
@@ -348,7 +350,7 @@ bottomHUD.Name = "BottomHUD"
 bottomHUD.AnchorPoint = Vector2.new(0.5, 1)
 bottomHUD.Position = UDim2.new(0.5, 0, 1, -12)
 -- 7 botones de 132 px + separación (140 px de paso) + márgenes: 10 + 6*140 + 132 + 10 = 992 px
-bottomHUD.Size = UDim2.fromOffset(1000, 104)
+bottomHUD.Size = UDim2.fromOffset(980, 92)
 bottomHUD.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
 bottomHUD.BackgroundTransparency = 0.12
 bottomHUD.BorderSizePixel = 0
@@ -356,12 +358,12 @@ bottomHUD.ZIndex = 20
 bottomHUD.Parent = root
 
 local bottomCorner = Instance.new("UICorner")
-bottomCorner.CornerRadius = UDim.new(0, 10)
+bottomCorner.CornerRadius = UDim.new(0, 6)
 bottomCorner.Parent = bottomHUD
 
 local bottomStroke = Instance.new("UIStroke")
 bottomStroke.Color = Color3.fromRGB(50, 70, 110)
-bottomStroke.Thickness = 1.5
+bottomStroke.Thickness = 1
 bottomStroke.Parent = bottomHUD
 
 -- Los paneles de tamaño fijo se reescalan según la pantalla (ver fitUI) para no deformarse ni salirse
@@ -391,7 +393,7 @@ troopsCard.ZIndex = 22
 troopsCard.Parent = statsRow
 
 local troopsCorner = Instance.new("UICorner")
-troopsCorner.CornerRadius = UDim.new(0, 6)
+troopsCorner.CornerRadius = UDim.new(0, 4)
 troopsCorner.Parent = troopsCard
 
 local goldCard = Instance.new("TextLabel")
@@ -408,7 +410,7 @@ goldCard.ZIndex = 22
 goldCard.Parent = statsRow
 
 local goldCorner = Instance.new("UICorner")
-goldCorner.CornerRadius = UDim.new(0, 6)
+goldCorner.CornerRadius = UDim.new(0, 4)
 goldCorner.Parent = goldCard
 
 -- Selector de Ratio de Ataque [20% | 40% | 60% | 80% | 100%]
@@ -1703,7 +1705,7 @@ showLobby(true)
 -- Cada bloque agrupa BLOCK x BLOCK celdas: color medio de la foto satelital + tinte del país dominante.
 -- BLOCK debe dividir a 960 y 400 (4, 5, 8, 10, 16). Menor = más detalle y más rectángulos en pantalla.
 -- ----------------------------------------------------------------------------
-local BLOCK = 5
+local BLOCK = 8
 
 -- Mapa de la Tierra en alta resolución (2x2 px por celda), generado con
 -- `python tools/generate_relief_style.py --tiles` y subido a Roblox. Si cambias el mapa, sube de nuevo las
@@ -1817,25 +1819,9 @@ local function initBlocks(w, h)
 	)
 end
 
--- Animación de propagación: bloques recién conquistados destellan y se asientan en 0,9 s
+-- Renderizado ultra-rápido estilo FrontWars: asignación directa sin bucles pesados de Heartbeat
 local flashing = {}
 local flashCount = 0
-local FLASH_TIME = 0.9
-RunService.Heartbeat:Connect(function()
-	local now = os.clock()
-	for b, t0 in pairs(flashing) do
-		local a = (now - t0) / FLASH_TIME
-		if a >= 1 then
-			b.frame.BackgroundColor3 = b.finalColor
-			b.frame.BackgroundTransparency = b.finalTransp
-			flashing[b] = nil
-			flashCount -= 1
-		else
-			b.frame.BackgroundColor3 = b.finalColor:Lerp(Color3.new(1, 1, 1), 0.65 * (1 - a))
-			b.frame.BackgroundTransparency = 0.05 + (b.finalTransp - 0.05) * a
-		end
-	end
-end)
 
 -- ----------------------------------------------------------------------------
 -- CONTORNO DE COLOR DE CADA TERRITORIO (mapa de bloques)
@@ -1844,9 +1830,7 @@ end)
 -- Tu contorno es dorado y late. Con mucho zoom se usa el borde celda por celda del nivel de detalle.
 -- ----------------------------------------------------------------------------
 -- ============================================================================
--- FRONTERAS DE PÍXELES FINOS (LÍNEAS DELGADAS POR PEQUEÑOS PÍXELES ESTILO FRONTWARS)
--- Cada frontera entre naciones o costa se dibuja como una línea nítida de 1.5 píxeles de grosor,
--- celda por celda exacta, trazando el perímetro de cada país con su color brillante.
+-- FRONTERAS DE PÍXELES FINOS OPTIMIZADAS (VIEWPORT CULLING ESTILO FRONTWARS)
 -- ============================================================================
 local edgeLayer = Instance.new("Frame")
 edgeLayer.Name = "PixelEdgeLayer"
@@ -1857,13 +1841,21 @@ edgeLayer.Visible = true
 edgeLayer.ZIndex = 6
 edgeLayer.Parent = mapCanvas
 
-local edgeFrames = {} -- [cell * 4 + side] = Frame
-local edgeFree = {}
-local myEdges = {} -- líneas de la propia nación para efecto de pulso dorado neón
-
+local MAX_VISIBLE_EDGES = 350
+local edgeFrames = {}
+local myEdges = {}
 local LINE_THICK_PX = 1.5
 
--- Modo equipos: dos dueños del mismo continente son aliados y no se dibuja contorno entre ellos
+-- Pre-instanciamos el pool fijo de frames (máximo 350 para 60 FPS garantizados)
+for i = 1, MAX_VISIBLE_EDGES do
+	local f = Instance.new("Frame")
+	f.BorderSizePixel = 0
+	f.ZIndex = 6
+	f.Visible = false
+	f.Parent = edgeLayer
+	edgeFrames[i] = f
+end
+
 local function sameTeam(a, b)
 	if not state.teamMode or a == 0 or b == 0 then
 		return false
@@ -1894,116 +1886,118 @@ local function edgeColor(ownerId)
 	return Color3.new(1, 1, 1)
 end
 
-local function setCellEdge(cell, side, show, ownerId)
-	local key = cell * 4 + side
-	local f = edgeFrames[key]
-	if not show then
-		if f then
-			f.Visible = false
-			edgeFrames[key] = nil
-			myEdges[f] = nil
-			edgeFree[#edgeFree + 1] = f
-		end
+-- Actualiza los bordes visibles SOLO dentro de la pantalla del jugador (Viewport Culling)
+local function refreshVisibleEdges()
+	local owner = state.owner
+	local w, h = state.w, state.h
+	if not owner or not w or w == 0 or not state.initialized then
+		edgeLayer.Visible = false
 		return
 	end
-	if not f then
-		f = table.remove(edgeFree)
-		if not f then
-			f = Instance.new("Frame")
-			f.BorderSizePixel = 0
-			f.ZIndex = 6
-			f.Parent = edgeLayer
-		end
-		edgeFrames[key] = f
-		local w, h = state.w, state.h
-		local x, y = cell % w, cell // w
 
-		-- Líneas delgadas de 1.5 píxeles exactos trazando cada píxel de celda
-		if side == 0 then -- Derecha (vertical)
-			f.AnchorPoint = Vector2.new(0.5, 0)
-			f.Position = UDim2.fromScale((x + 1) / w, y / h)
-			f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
-		elseif side == 1 then -- Abajo (horizontal)
-			f.AnchorPoint = Vector2.new(0, 0.5)
-			f.Position = UDim2.fromScale(x / w, (y + 1) / h)
-			f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
-		elseif side == 2 then -- Izquierda (vertical)
-			f.AnchorPoint = Vector2.new(0.5, 0)
-			f.Position = UDim2.fromScale(x / w, y / h)
-			f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
-		else -- Arriba (horizontal)
-			f.AnchorPoint = Vector2.new(0, 0.5)
-			f.Position = UDim2.fromScale(x / w, y / h)
-			f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
-		end
-		f.BackgroundTransparency = 0.05
-		f.Visible = true
+	local rel = state.zoom / (state.fit or state.zoom)
+	-- Con zoom alejado (mapa entero) las líneas de 1px causan lag y aliasing; los bloques bastan
+	if rel < 1.25 then
+		edgeLayer.Visible = false
+		table.clear(myEdges)
+		return
 	end
-	f.BackgroundColor3 = edgeColor(ownerId)
-	myEdges[f] = if ownerId == state.myId then true else nil
+	edgeLayer.Visible = true
+
+	local vs = mapContainer.AbsoluteSize
+	local cellW = BASE_WIDTH * state.zoom / w
+	local cellH = BASE_HEIGHT * state.zoom / h
+	if cellW <= 0 or cellH <= 0 then
+		return
+	end
+
+	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
+	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
+	local x0 = math.clamp(math.floor(-left / cellW) - 1, 0, w - 1)
+	local x1 = math.clamp(math.ceil((vs.X - left) / cellW) + 1, 0, w - 1)
+	local y0 = math.clamp(math.floor(-top / cellH) - 1, 0, h - 1)
+	local y1 = math.clamp(math.ceil((vs.Y - top) / cellH) + 1, 0, h - 1)
+
+	table.clear(myEdges)
+	local edgeCount = 0
+
+	for y = y0, y1 do
+		local row = y * w
+		for x = x0, x1 do
+			local cell = row + x
+			local o = buffer.readu8(owner, cell)
+			if o ~= 0 then
+				local r = buffer.readu8(owner, row + (if x == w - 1 then 0 else x + 1))
+				local d = if y < h - 1 then buffer.readu8(owner, (y + 1) * w + x) else 0
+
+				-- Borde derecho
+				if r ~= o and not sameTeam(r, o) then
+					edgeCount += 1
+					if edgeCount <= MAX_VISIBLE_EDGES then
+						local f = edgeFrames[edgeCount]
+						f.AnchorPoint = Vector2.new(0.5, 0)
+						f.Position = UDim2.fromScale((x + 1) / w, y / h)
+						f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
+						f.BackgroundColor3 = edgeColor(o)
+						f.BackgroundTransparency = 0.05
+						f.Visible = true
+						if o == state.myId then
+							myEdges[f] = true
+						end
+					end
+				end
+
+				-- Borde inferior
+				if d ~= o and not sameTeam(d, o) then
+					edgeCount += 1
+					if edgeCount <= MAX_VISIBLE_EDGES then
+						local f = edgeFrames[edgeCount]
+						f.AnchorPoint = Vector2.new(0, 0.5)
+						f.Position = UDim2.fromScale(x / w, (y + 1) / h)
+						f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
+						f.BackgroundColor3 = edgeColor(o)
+						f.BackgroundTransparency = 0.05
+						f.Visible = true
+						if o == state.myId then
+							myEdges[f] = true
+						end
+					end
+				end
+
+				if edgeCount >= MAX_VISIBLE_EDGES then
+					break
+				end
+			end
+		end
+		if edgeCount >= MAX_VISIBLE_EDGES then
+			break
+		end
+	end
+
+	-- Ocultar frames sobrantes del pool
+	for i = edgeCount + 1, MAX_VISIBLE_EDGES do
+		edgeFrames[i].Visible = false
+	end
 end
+
+state.refreshEdges = refreshVisibleEdges
+state.rebuildEdges = refreshVisibleEdges
 
 local function updateCellEdges(cell)
-	local owner = state.owner
-	if not owner or not state.w or state.w == 0 then
-		return
-	end
-	local o = buffer.readu8(owner, cell)
-	if o == 0 then
-		setCellEdge(cell, 0, false)
-		setCellEdge(cell, 1, false)
-		setCellEdge(cell, 2, false)
-		setCellEdge(cell, 3, false)
-		return
-	end
-	local w, h = state.w, state.h
-	local x, y = cell % w, cell // w
-
-	local r = buffer.readu8(owner, y * w + (if x == w - 1 then 0 else x + 1))
-	local d = if y < h - 1 then buffer.readu8(owner, (y + 1) * w + x) else 0
-	local l = buffer.readu8(owner, y * w + (if x == 0 then w - 1 else x - 1))
-	local u = if y > 0 then buffer.readu8(owner, (y - 1) * w + x) else 0
-
-	setCellEdge(cell, 0, r ~= o and not sameTeam(r, o), o)
-	setCellEdge(cell, 1, d ~= o and not sameTeam(d, o), o)
-	setCellEdge(cell, 2, l ~= o and not sameTeam(l, o), o)
-	setCellEdge(cell, 3, u ~= o and not sameTeam(u, o), o)
+	-- Viewport Culling gestionado eficientemente en refreshVisibleEdges
 end
 
--- Reconstruye todas las líneas de frontera pixel a pixel
-local rebuildEdges
-function rebuildEdges()
-	state.rebuildEdges = rebuildEdges
-	for key, f in pairs(edgeFrames) do
-		f.Visible = false
-		edgeFree[#edgeFree + 1] = f
-		edgeFrames[key] = nil
-	end
-	table.clear(myEdges)
-	local owner = state.owner
-	local w, h = state.w, state.h
-	if not owner or not w or w == 0 then
-		return
-	end
-	local total = w * h
-	for cell = 0, total - 1 do
-		if buffer.readu8(owner, cell) ~= 0 then
-			updateCellEdges(cell)
-		end
-		if cell % 3000 == 0 then
-			task.wait()
-		end
-	end
-end
-
--- El contorno del jugador late con resplandor dorado
+-- El contorno del jugador late con resplandor dorado (solo en frames activos)
 local edgePulseAcc = 0
 RunService.Heartbeat:Connect(function(dt)
 	edgePulseAcc += dt
-	if edgePulseAcc < 0.12 then
+	if edgePulseAcc < 0.15 then
 		return
 	end
 	edgePulseAcc = 0
+	if not edgeLayer.Visible then
+		return
+	end
 	local k = (math.sin(os.clock() * 4) + 1) / 2
 	local c = Color3.fromRGB(255, 215, 40):Lerp(Color3.fromRGB(255, 255, 240), k)
 	for f in pairs(myEdges) do
@@ -2068,24 +2062,9 @@ local function recolorBlock(bi)
 		math.clamp(math.floor(g), 0, 255),
 		math.clamp(math.floor(bl), 0, 255)
 	)
-	-- Propagación: al cambiar de dueño, el bloque "destella" claro y se asienta en su color (ver Heartbeat arriba)
 	local ownerNow = if n then bestId else 0
-	if state.animReady and n and b.owner ~= ownerNow and flashCount < 900 then
-		b.finalColor, b.finalTransp = finalColor, transparency
-		b.frame.BackgroundColor3 = finalColor:Lerp(Color3.new(1, 1, 1), 0.65)
-		b.frame.BackgroundTransparency = 0.05
-		if not flashing[b] then
-			flashCount += 1
-		end
-		flashing[b] = os.clock()
-	else
-		if flashing[b] then
-			flashing[b] = nil
-			flashCount -= 1
-		end
-		b.frame.BackgroundColor3 = finalColor
-		b.frame.BackgroundTransparency = transparency
-	end
+	b.frame.BackgroundColor3 = finalColor
+	b.frame.BackgroundTransparency = transparency
 	local ownerChanged = b.owner ~= ownerNow
 	b.owner = ownerNow
 	-- Cambió el dueño del bloque: se redibujan sus contornos y los de sus 4 vecinos (comparten lado)
@@ -2343,24 +2322,44 @@ end
 -- Con zoom bajo solo se rotulan tú, los jugadores y los países más grandes; al acercar se ven todos.
 local function applyLabelZoom()
 	local rel = state.zoom / (state.fit or state.zoom)
+	local w, h = state.w or 960, state.h or 400
+	local vs = mapContainer.AbsoluteSize
+	local cellW = BASE_WIDTH * state.zoom / w
+	local cellH = BASE_HEIGHT * state.zoom / h
+	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
+	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
+	local x0 = math.clamp(math.floor(-left / cellW) - 8, 0, w)
+	local x1 = math.clamp(math.ceil((vs.X - left) / cellW) + 8, 0, w)
+	local y0 = math.clamp(math.floor(-top / cellH) - 8, 0, h)
+	local y1 = math.clamp(math.ceil((vs.Y - top) / cellH) + 8, 0, h)
+
 	for _, m in ipairs(markerLabels) do
-		local ds = math.clamp(math.floor((if m.isMe then 12 else 7) * (0.75 + 0.3 * rel)), 5, 24)
-		m.dot.Size = UDim2.fromOffset(ds, ds)
-		local show = m.always or rel >= 1.8
-		m.label.Visible = show
-		if m.troops then
-			m.troops.Visible = show and m.troops.Text ~= ""
+		local inView = true
+		if m.capX and m.capY then
+			inView = (m.capX >= x0 and m.capX <= x1 and m.capY >= y0 and m.capY <= y1)
 		end
-		if show then
-			local size = math.clamp(math.floor(7 + 3 * rel), 8, 17) + (if m.strong then 2 else 0)
-			local width = math.max(100, size * 14)
-			m.label.TextSize = size
-			m.label.Size = UDim2.fromOffset(width, size + 6)
-			m.label.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2)
+		if not inView then
+			if m.marker then m.marker.Visible = false end
+		else
+			if m.marker then m.marker.Visible = true end
+			local ds = math.clamp(math.floor((if m.isMe then 12 else 7) * (0.75 + 0.3 * rel)), 5, 24)
+			m.dot.Size = UDim2.fromOffset(ds, ds)
+			local show = m.always or rel >= 1.8
+			m.label.Visible = show
 			if m.troops then
-				m.troops.TextSize = math.max(8, size - 1)
-				m.troops.Size = UDim2.fromOffset(width, size + 4)
-				m.troops.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2 + size + 4)
+				m.troops.Visible = show and m.troops.Text ~= ""
+			end
+			if show then
+				local size = math.clamp(math.floor(7 + 3 * rel), 8, 17) + (if m.strong then 2 else 0)
+				local width = math.max(100, size * 14)
+				m.label.TextSize = size
+				m.label.Size = UDim2.fromOffset(width, size + 6)
+				m.label.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2)
+				if m.troops then
+					m.troops.TextSize = math.max(8, size - 1)
+					m.troops.Size = UDim2.fromOffset(width, size + 4)
+					m.troops.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2 + size + 4)
+				end
 			end
 		end
 	end
@@ -2484,6 +2483,9 @@ local function updateMarkers()
 				troops = troopsLbl,
 				label = nameLbl,
 				dot = dot,
+				marker = marker,
+				capX = capX,
+				capY = capY,
 				isMe = isMe,
 				strong = isMe or isHuman,
 				always = isMe or isHuman or bigIds[n.id] == true,
@@ -2723,8 +2725,6 @@ end
 -- ============================================================================
 -- PAN & ZOOM (Navegación fluida por el mapa)
 -- ============================================================================
-local BASE_WIDTH = 2400
-local BASE_HEIGHT = 1000
 
 local function updateMapTransform()
 	local viewportSize = mapContainer.AbsoluteSize
@@ -2738,6 +2738,9 @@ local function updateMapTransform()
 	applyLabelZoom()
 	if state.updateRadar then
 		state.updateRadar()
+	end
+	if state.refreshEdges then
+		state.refreshEdges()
 	end
 end
 
@@ -3170,7 +3173,7 @@ end)
 -- Se ocultan al acercar mucho (para no tapar el detalle) y se pueden apagar con el botón ☁.
 local CLOUD_COUNT = 14
 local CLOUD_ROWS = { 0.42, 0.72, 1.0, 0.86, 0.5 } -- anchura relativa de cada fila: da forma redondeada
-local cloudsOn = true
+local cloudsOn = false
 local cloudLayer = Instance.new("Frame")
 cloudLayer.Name = "CloudLayer"
 cloudLayer.Size = UDim2.fromScale(1, 1)
@@ -3813,7 +3816,7 @@ end)
 -- ============================================================================
 local frontBegin, frontPush
 do
-	local FRONT_MAX_ACTIVE = 2500
+	local FRONT_MAX_ACTIVE = 40
 	local FRONT_PER_DIFF = 400
 	local FRONT_FADE = 1.1
 	local front = {
@@ -3829,7 +3832,7 @@ do
 	}
 
 	-- Swarm de partículas internas: tropas marchando desde el interior hacia las fronteras
-	local SWARM_MAX = 100
+	local SWARM_MAX = 25
 	local swarm = {
 		free = {},
 		active = {},
