@@ -525,11 +525,14 @@ btnAI.MouseButton1Click:Connect(function()
 end)
 
 -- Fila Inferior del HUD: Barra de Acciones de Construcción y Combate
-local actionsRow = Instance.new("Frame")
+local actionsRow = Instance.new("ScrollingFrame")
 actionsRow.Name = "ActionsRow"
 actionsRow.Size = UDim2.new(1, -20, 0, 48)
 actionsRow.Position = UDim2.fromOffset(10, 44)
 actionsRow.BackgroundTransparency = 1
+actionsRow.ScrollBarThickness = 2
+actionsRow.ScrollBarImageColor3 = Color3.fromRGB(0, 200, 240)
+actionsRow.CanvasSize = UDim2.fromOffset(1320, 0)
 actionsRow.ZIndex = 21
 actionsRow.Parent = bottomHUD
 
@@ -594,14 +597,29 @@ local btnPost =
 	createActionButton("BUILD_Post", "PUESTO DEF.", "$350 Oro (Torre)", Color3.fromRGB(150, 110, 20), "🛡️")
 btnPost.Position = UDim2.fromOffset(420, 2)
 
+local btnFarm = createActionButton("BUILD_Farm", "GRANJA", "$300 Oro (+Tropas)", Color3.fromRGB(40, 150, 60), "🌾")
+btnFarm.Position = UDim2.fromOffset(560, 2)
+
+local btnMine = createActionButton("BUILD_Mine", "MINA", "$450 Oro (++Oro)", Color3.fromRGB(180, 130, 20), "⛏️")
+btnMine.Position = UDim2.fromOffset(700, 2)
+
+local btnAirbase =
+	createActionButton("BUILD_Airbase", "BASE AÉREA", "$800 Oro (Aéreo)", Color3.fromRGB(80, 90, 160), "✈️")
+btnAirbase.Position = UDim2.fromOffset(840, 2)
+
 local btnSilo = createActionButton("BUILD_Silo", "SILO MISIL", "$1200 Oro", Color3.fromRGB(100, 50, 140), "🚀")
-btnSilo.Position = UDim2.fromOffset(560, 2)
+btnSilo.Position = UDim2.fromOffset(980, 2)
 
 local btnNuke = createActionButton("NUKE", "MISIL NUCLEAR", "$900 Oro (Silo)", Color3.fromRGB(180, 70, 0), "☢️")
-btnNuke.Position = UDim2.fromOffset(700, 2)
+btnNuke.Position = UDim2.fromOffset(1120, 2)
+
+local btnDemolish = createActionButton("DEMOLISH", "DEMOLER", "60% Reembolso", Color3.fromRGB(110, 80, 70), "🏚️")
+btnDemolish.Position = UDim2.fromOffset(1260, 2)
 
 local btnRetreat = createActionButton("RETREAT", "RETIRADA", "Recuperar tropas", Color3.fromRGB(130, 40, 40), "🏳️")
-btnRetreat.Position = UDim2.fromOffset(840, 2)
+btnRetreat.Position = UDim2.fromOffset(1400, 2)
+
+actionsRow.CanvasSize = UDim2.fromOffset(1560, 0)
 
 local function setActionMode(mode)
 	state.actionMode = mode
@@ -633,11 +651,23 @@ end)
 btnPost.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Post")
 end)
+btnFarm.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_Farm")
+end)
+btnMine.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_Mine")
+end)
+btnAirbase.MouseButton1Click:Connect(function()
+	setActionMode("BUILD_Airbase")
+end)
 btnSilo.MouseButton1Click:Connect(function()
 	setActionMode("BUILD_Silo")
 end)
 btnNuke.MouseButton1Click:Connect(function()
 	setActionMode("NUKE")
+end)
+btnDemolish.MouseButton1Click:Connect(function()
+	setActionMode("DEMOLISH")
 end)
 btnRetreat.MouseButton1Click:Connect(function()
 	WorldCommand:FireServer({ a = "RETREAT" })
@@ -2361,6 +2391,8 @@ local function handleMapClick(cell)
 	elseif state.actionMode:sub(1, 6) == "BUILD_" then
 		local kind = state.actionMode:sub(7)
 		WorldCommand:FireServer({ a = "BUILD", kind = kind, cell = cell })
+	elseif state.actionMode == "DEMOLISH" then
+		WorldCommand:FireServer({ a = "DEMOLISH", cell = cell })
 	elseif state.actionMode:sub(1, 7) == "WEAPON_" then
 		-- El arma sigue apuntada tras disparar (cada una tiene su enfriamiento y el servidor valida oro y recarga)
 		WorldCommand:FireServer({ a = "WEAPON", kind = state.actionMode:sub(8), cell = cell })

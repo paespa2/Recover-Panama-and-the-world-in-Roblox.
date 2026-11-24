@@ -30,7 +30,15 @@ local NUKE_RADIUS = 16
 local POST_RADIUS = 20
 local PORT_RANGE = 140
 
-Engine.COSTS = { City = 500, Port = 400, Post = 350, Silo = 1200 }
+Engine.COSTS = {
+	City = 500,
+	Port = 400,
+	Post = 350,
+	Silo = 1200,
+	Farm = 300, -- Conqur.io: Granja (+crecimiento de población/reclutamiento)
+	Mine = 450, -- Conqur.io: Mina (+ingreso constante de oro)
+	Airbase = 800, -- Conqur.io: Base aérea (ataques aéreos de largo alcance)
+}
 Engine.NUKE_COST = NUKE_COST
 local NUKE_COOLDOWN = 45
 
@@ -349,6 +357,9 @@ local INTENT_HANDLERS = {
 	end,
 	BUILD = function(e, n, i)
 		return e:build(n, i.kind, i.cell)
+	end,
+	DEMOLISH = function(e, n, i)
+		return e:demolish(n, i.cell)
 	end,
 	WEAPON = function(e, n, i)
 		return e:weapon(n, i.kind, i.cell)
@@ -1335,8 +1346,59 @@ function Engine:build(n, kind, cell)
 		table.insert(n.posts, b)
 	elseif kind == "Port" then
 		table.insert(n.ports, b)
+	elseif kind == "Farm" then
+		n.farms = (n.farms or 0) + 1
+	elseif kind == "Mine" then
+		n.mines = (n.mines or 0) + 1
+	elseif kind == "Airbase" then
+		n.airbases = (n.airbases or 0) + 1
 	end
 	return true
+end
+
+-- Conqur.io: Demoler edificio propio para recuperar el 60% del costo en oro
+function Engine:demolish(n, cell)
+	local b = self.buildingAt[cell]
+	if not b then
+		return false, "No hay ningún edificio en esa celda"
+	end
+	if b.owner ~= n.id then
+		return false, "Ese edificio no te pertenece"
+	end
+	local cost = Engine.COSTS[b.kind] or 300
+	local refund = math.floor(cost * 0.6)
+	self.buildingAt[cell] = nil
+	for idx, item in ipairs(n.buildings) do
+		if item.cell == cell then
+			table.remove(n.buildings, idx)
+			break
+		end
+	end
+	if b.kind == "City" then
+		n.cities = math.max(0, n.cities - 1)
+	elseif b.kind == "Farm" then
+		n.farms = math.max(0, (n.farms or 1) - 1)
+	elseif b.kind == "Mine" then
+		n.mines = math.max(0, (n.mines or 1) - 1)
+	elseif b.kind == "Airbase" then
+		n.airbases = math.max(0, (n.airbases or 1) - 1)
+	elseif b.kind == "Post" then
+		for idx, item in ipairs(n.posts) do
+			if item.cell == cell then
+				table.remove(n.posts, idx)
+				break
+			end
+		end
+	elseif b.kind == "Port" then
+		for idx, item in ipairs(n.ports) do
+			if item.cell == cell then
+				table.remove(n.ports, idx)
+				break
+			end
+		end
+	end
+	n.gold += refund
+	return true, refund
 end
 
 function Engine:nuke(n, cell)
@@ -1688,14 +1750,16 @@ function Engine:economyStep()
 			else
 				local maxT = self:maxTroops(n)
 				local mult = if n.isBot then self.diff.growth else 1
-				-- Curva de interés compuesto estilo Territorial.io / RoWorld:
-				-- Acumular tropas produce interés porcentual; expandir territorio sube el ingreso base y el tope.
+				-- Curva de interés compuesto estilo Territorial.io / RoWorld / Conqur.io:
+				-- Granja (+25 tropas base por segundo), Mina (+8 oro por segundo)
+				local farms = n.farms or 0
+				local mines = n.mines or 0
 				local interest = n.troops * 0.038 * math.max(0, 1 - (n.troops / maxT))
-				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25) * mult
+				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25 + farms * 35) * mult
 				local g = (baseGrowth + interest) * math.max(0.1, 1 - (n.troops / (maxT * 1.05)))
 				local troopsBefore = n.troops
 				n.troops = math.min(maxT, n.troops + g)
-				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5
+				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5 + mines * 10
 				n.gold += goldGain
 				-- Ritmos reales por segundo (el HUD los muestra tal cual; antes usaba una fórmula inventada)
 				n.troopRate = n.troops - troopsBefore

@@ -164,6 +164,8 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 		intent = { a = "ATTACK", cell = cell, ratio = math.clamp(tonumber(cmd.ratio) or 0.5, 0.1, 1) }
 	elseif action == "BUILD" and validCell then
 		intent = { a = "BUILD", cell = cell, kind = tostring(cmd.kind) }
+	elseif action == "DEMOLISH" and validCell then
+		intent = { a = "DEMOLISH", cell = cell }
 	elseif action == "DEBUG_DISASTER" and RunService:IsStudio() then
 		-- Solo en Studio: provoca un desastre ahora mismo (kind opcional) para probar animaciones y efectos
 		local kind = tostring(cmd.kind or "")
