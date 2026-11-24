@@ -182,6 +182,16 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 		intent = { a = "WEAPON", cell = cell, kind = tostring(cmd.kind) }
 	elseif action == "NUKE" and validCell then
 		intent = { a = "NUKE", cell = cell }
+	elseif
+		action == "ALLY_REQUEST"
+		or action == "ALLY_ACCEPT"
+		or action == "ALLY_DECLINE"
+		or action == "ALLY_BREAK"
+	then
+		local target = math.floor(tonumber(cmd.target) or -1)
+		if target > 0 and engine.nations[target] then
+			intent = { a = action, target = target }
+		end
 	elseif action == "RETREAT" then
 		intent = { a = "RETREAT" }
 	elseif action == "DEFENSE_AI" then

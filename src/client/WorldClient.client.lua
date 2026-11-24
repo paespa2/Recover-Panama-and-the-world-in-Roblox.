@@ -4211,6 +4211,40 @@ spectatorBanner.ZIndex = 25
 spectatorBanner.Parent = root
 roundCorners(spectatorBanner, 10)
 
+-- Píldora "Atacando a X con N" (estilo RoWorld): tu ataque más grande contra otra nación
+local attackPill = Instance.new("TextLabel")
+attackPill.Name = "AttackPill"
+attackPill.AnchorPoint = Vector2.new(0.5, 0)
+attackPill.Position = UDim2.new(0.5, 0, 0, 74)
+attackPill.Size = UDim2.fromOffset(300, 26)
+attackPill.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
+attackPill.BackgroundTransparency = 0.1
+attackPill.BorderSizePixel = 0
+attackPill.Font = Enum.Font.GothamBold
+attackPill.TextColor3 = Color3.fromRGB(255, 205, 80)
+attackPill.TextSize = 13
+attackPill.Visible = false
+attackPill.ZIndex = 24
+attackPill.Parent = root
+roundCorners(attackPill, 13)
+
+local function updateAttackPill(meData)
+	local best, bestTroops = nil, 0
+	for _, a in ipairs(meData.attacks or {}) do
+		if a.target and a.target ~= 0 and a.troops > bestTroops then
+			best, bestTroops = a, a.troops
+		end
+	end
+	local target = best and state.rosterById[best.target]
+	if best and target then
+		attackPill.Text = string.format("⚔️ Atacando a %s con %s", target.name, troopText(best.troops))
+		attackPill.Size = UDim2.fromOffset(math.max(220, #attackPill.Text * 8), 26)
+		attackPill.Visible = true
+	else
+		attackPill.Visible = false
+	end
+end
+
 local function setSpectator(on)
 	if spectatorBanner.Visible == on then
 		return
@@ -4224,6 +4258,7 @@ WorldMe.OnClientEvent:Connect(function(meData)
 	local wasAlive = state.me and state.me.alive
 	state.me = meData
 	setSpectator(meData.eliminated == true)
+	updateAttackPill(meData)
 	updateSpawnUI()
 	updateWeaponCooldowns(meData.weapons)
 	if meData.autoMode and meData.autoMode ~= state.autoMode then

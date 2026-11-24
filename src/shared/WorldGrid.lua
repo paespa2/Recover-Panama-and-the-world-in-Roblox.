@@ -29,6 +29,11 @@ WorldGrid.PLANETS = {
 		name = "Pangea (Era Cretácica)",
 		icon = "🦖",
 		kind = "pangea",
+		style = "pangea",
+		seed = 53,
+		freq = 1.6,
+		landA = { 112, 156, 74 }, -- selva cretácica
+		landB = { 186, 156, 98 }, -- tierra seca y arcilla
 		ocean = { 12, 66, 92 },
 		mid = { 22, 92, 118 },
 		shallow = { 44, 134, 150 },
@@ -1752,6 +1757,14 @@ local function planetPixel(def, x, y)
 		if math.abs(cylNoise(x, y, def.freq * 5.5, def.seed + 23) - 0.22) < 0.018 then
 			r, g, b = r * 0.7, g * 0.7, b * 0.72
 		end
+	elseif style == "pangea" then
+		-- Tierras bajas con selva densa y cumbres de roca grisácea
+		local el = elevAt(x, y) / 255
+		if el < 0.32 then
+			r, g, b = lerp(r, 52, 0.45), lerp(g, 104, 0.45), lerp(b, 56, 0.45)
+		elseif el > 0.78 then
+			r, g, b = lerp(r, 150, 0.5), lerp(g, 140, 0.5), lerp(b, 128, 0.5)
+		end
 	elseif style == "venus" then
 		-- Canales de lava incandescente entre llanuras volcánicas
 		if math.abs(cylNoise(x, y, def.freq * 2.0, def.seed + 41)) < 0.03 then
@@ -1773,7 +1786,7 @@ function WorldGrid.BuildBase(planetId, land)
 		end
 	end
 	local base = buffer.create(W * H * 3)
-	if def.kind == "noise" then
+	if def.kind == "noise" or def.kind == "pangea" then
 		planetElev = computeElevation(def)
 	end
 
@@ -1807,7 +1820,7 @@ function WorldGrid.BuildBase(planetId, land)
 				local dz_dy = (hD - hU) * 0.5
 				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
 
-				if def.kind == "earth" or def.kind == "pangea" then
+				if def.kind == "earth" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
 						g = math.min(255, g + 14)
@@ -1816,7 +1829,15 @@ function WorldGrid.BuildBase(planetId, land)
 					local u = ((x + 0.5) / W) * 2 - 1
 					local v = ((y + 0.5) / H) * 2 - 1
 					local rr = math.min(1, math.sqrt(u * u + v * v) * 1.1)
-					r, g, b = mix3(def.landA, def.landB, rr)
+					-- Brazos espirales con polvo y estrellas dispersas
+					local theta = math.atan2(v, u)
+					local arm = (math.sin(2 * theta - rr * 9) + 1) * 0.5
+					local dust = (math.noise(x * 0.05, y * 0.07, 2.2) + 1) * 0.5
+					local k = math.clamp(arm * (1 - rr * 0.8) * 0.7 + dust * 0.35, 0, 1)
+					r, g, b = mix3(def.landB, def.landA, k)
+					if math.noise(x * 0.9, y * 0.9, 7.7) > 0.62 then
+						r, g, b = 255, 250, 230
+					end
 				else
 					local t = (math.noise(x * 0.16, y * 0.2, 4.4) + 1) * 0.5
 					r, g, b, shade = planetPixel(def, x, y)

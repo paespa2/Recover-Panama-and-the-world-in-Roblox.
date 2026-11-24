@@ -464,6 +464,32 @@ end
 -- ============================================================================
 -- DECISIÓN PRINCIPAL
 -- ============================================================================
+-- Responde a las solicitudes de alianza que recibe un bot: rechaza al líder del mapa; acepta con más
+-- probabilidad si está siendo atacado y, si no, solo a veces. Los bots nunca rompen una alianza.
+local function handleAlliances(engine, n)
+	for _, req in pairs(engine.allyRequests) do
+		if req.to == n.id then
+			local from = engine.nations[req.from]
+			if from and from.alive then
+				local share = if engine.landCount > 0 then from.cells / engine.landCount else 0
+				local underAttack = false
+				for _, t in pairs(n.attackedBy) do
+					if engine.time - t < 30 then
+						underAttack = true
+						break
+					end
+				end
+				local chance = if share > 0.2 then 0 elseif underAttack then 0.8 else 0.4
+				if engine.rng:NextNumber() < chance then
+					engine:acceptAlliance(n, from.id)
+				else
+					engine:declineAlliance(n, from.id)
+				end
+			end
+		end
+	end
+end
+
 function BotAI.think(engine, n)
 	if not n.alive then
 		return
@@ -477,6 +503,7 @@ function BotAI.think(engine, n)
 	end
 	local p = BotAI.PERSONAS[key]
 	local now = engine.time
+	handleAlliances(engine, n)
 
 	local maxAttacks = d.maxAttacks + p.extraAttacks
 	local busy = n.troops < 250 or #n.attacks >= maxAttacks

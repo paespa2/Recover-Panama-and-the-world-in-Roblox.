@@ -255,6 +255,7 @@ function Engine.new(planetId, botCount, difficulty, mode, seed)
 	self.seed = seed or (os.time() % 2147483647)
 	self.rng = Random.new(self.seed)
 	self.tickCount = 0
+	self.allyRequests = {} -- [from * 1024 + to] = { from, to, expires }
 	self.pending = {} -- intenciones de los jugadores pendientes de ejecutar
 	self.intentLog = {} -- { t = tick, id = nación, intent = ... } para reproducir la partida
 	self.disasterTimer = 55 + self.rng:NextNumber() * 30 -- primer desastre 55-85 s después de empezar la guerra
@@ -308,6 +309,7 @@ function Engine:addNation(name, color, isBot, player)
 		ports = {},
 		defenseAI = true,
 		attackedBy = {},
+		allies = {}, -- [idAliado] = true (alianzas pactadas)
 		thinkTimer = self.rng:NextNumber() * 4,
 		persona = if isBot then BotAI.assign(self.rng, name) else nil,
 		lastNuke = -999,
@@ -370,6 +372,18 @@ local INTENT_HANDLERS = {
 		return true
 	end,
 }
+INTENT_HANDLERS.ALLY_REQUEST = function(e, n, i)
+	return e:requestAlliance(n, i.target)
+end
+INTENT_HANDLERS.ALLY_ACCEPT = function(e, n, i)
+	return e:acceptAlliance(n, i.target)
+end
+INTENT_HANDLERS.ALLY_DECLINE = function(e, n, i)
+	return e:declineAlliance(n, i.target)
+end
+INTENT_HANDLERS.ALLY_BREAK = function(e, n, i)
+	return e:breakAlliance(n, i.target)
+end
 local INTENT_LOG_MAX = 20000
 
 -- Encola la intención de una nación; no cambia el estado hasta runIntents
@@ -381,6 +395,7 @@ end
 
 -- Ejecuta las intenciones pendientes (se llama al inicio de cada tick)
 function Engine:runIntents()
+	self:expireAllyRequests()
 	local pending = self.pending
 	if #pending == 0 then
 		return
@@ -856,7 +871,7 @@ function Engine:launchAttack(n, targetId, ratio, targetCell)
 			return false, "Objetivo inválido"
 		end
 		if self:isAlly(n, tn) then
-			return false, "No puedes atacar a un aliado de tu continente"
+			return false, "No puedes atacar a un aliado: rompe la alianza primero"
 		end
 	end
 	local troops = math.floor(n.troops * math.clamp(ratio, 0.05, 1))
@@ -1030,6 +1045,9 @@ function Engine:processAttack(n, atk)
 					end
 				end
 				cost *= self:terrain(cell) -- las montañas cuestan más tropas
+				if tn and (tn.traitorUntil or 0) > self.time then
+					cost *= 0.5 -- el traidor es mucho más fácil de conquistar
+				end
 				if atk.troops < cost then
 					return true
 				end
@@ -1080,12 +1098,131 @@ end
 
 -- Modo equipos: dos naciones del mismo continente son aliadas y no pueden atacarse
 function Engine:isAlly(a, b)
+	if a ~= nil and b ~= nil and a.allies and a.allies[b.id] then
+		return true -- alianza pactada entre jugadores/naciones
+	end
 	return self.teamMode == true
 		and a ~= nil
 		and b ~= nil
 		and a ~= b
 		and a.continent ~= nil
 		and a.continent == b.continent
+end
+
+-- ============================================================================
+-- ALIANZAS (estilo RoWorld/OpenFront): solicitud → aceptar/rechazar; romperla te marca como TRAIDOR 30 s
+-- (durante ese tiempo atacarte cuesta solo el 50 % de las tropas)
+-- ============================================================================
+local ALLY_REQUEST_SECONDS = 30
+local TRAITOR_SECONDS = 30
+
+local function allyKey(fromId, toId)
+	return fromId * 1024 + toId
+end
+
+local function notifyNation(self, n, text)
+	if n.userId then
+		self:notify(n.userId, text)
+	end
+end
+
+local function dropAttacksBetween(a, b)
+	for k = #a.attacks, 1, -1 do
+		if a.attacks[k].target == b.id then
+			a.troops += math.max(0, a.attacks[k].troops)
+			table.remove(a.attacks, k)
+		end
+	end
+end
+
+function Engine:formAlliance(a, b)
+	a.allies[b.id] = true
+	b.allies[a.id] = true
+	dropAttacksBetween(a, b)
+	dropAttacksBetween(b, a)
+	self:notify(nil, "🤝 " .. a.name .. " y " .. b.name .. " han formado una alianza")
+end
+
+function Engine:requestAlliance(n, targetId)
+	local t = self.nations[targetId]
+	if not t or not t.alive or t == n then
+		return false, "Objetivo inválido"
+	end
+	if self:isAlly(n, t) then
+		return false, "Ya sois aliados"
+	end
+	-- Si el otro ya te había pedido alianza, se acepta directamente
+	local reverse = self.allyRequests[allyKey(t.id, n.id)]
+	if reverse then
+		self.allyRequests[allyKey(t.id, n.id)] = nil
+		self:formAlliance(n, t)
+		return true
+	end
+	self.allyRequests[allyKey(n.id, t.id)] = { from = n.id, to = t.id, expires = self.time + ALLY_REQUEST_SECONDS }
+	notifyNation(self, t, "🤝 " .. n.name .. " propone una alianza")
+	notifyNation(self, n, "🤝 Solicitud de alianza enviada a " .. t.name)
+	return true
+end
+
+function Engine:acceptAlliance(n, fromId)
+	local req = self.allyRequests[allyKey(fromId, n.id)]
+	local from = self.nations[fromId]
+	if not req or not from or not from.alive then
+		return false, "La solicitud ya no es válida"
+	end
+	self.allyRequests[allyKey(fromId, n.id)] = nil
+	self:formAlliance(n, from)
+	return true
+end
+
+function Engine:declineAlliance(n, fromId)
+	local from = self.nations[fromId]
+	if self.allyRequests[allyKey(fromId, n.id)] then
+		self.allyRequests[allyKey(fromId, n.id)] = nil
+		if from then
+			notifyNation(self, from, "❌ " .. n.name .. " rechazó tu alianza")
+		end
+	end
+	return true
+end
+
+function Engine:breakAlliance(n, targetId)
+	local t = self.nations[targetId]
+	if not t or not n.allies[targetId] then
+		return false, "No tienes alianza con esa nación"
+	end
+	n.allies[targetId] = nil
+	t.allies[n.id] = nil
+	n.traitorUntil = self.time + TRAITOR_SECONDS
+	self:notify(nil, "💔 " .. n.name .. " rompió su alianza con " .. t.name .. ": ¡TRAIDOR durante 30 s!")
+	return true
+end
+
+-- Quita las solicitudes caducadas
+function Engine:expireAllyRequests()
+	for key, req in pairs(self.allyRequests) do
+		if req.expires <= self.time then
+			self.allyRequests[key] = nil
+		end
+	end
+end
+
+-- Datos de alianzas para el HUD del jugador
+function Engine:allySnapshot(n)
+	local allies = {}
+	for id in pairs(n.allies) do
+		table.insert(allies, id)
+	end
+	local requests = {}
+	for _, req in pairs(self.allyRequests) do
+		if req.to == n.id then
+			local from = self.nations[req.from]
+			if from and from.alive then
+				table.insert(requests, { from = from.id, name = from.name, left = math.ceil(req.expires - self.time) })
+			end
+		end
+	end
+	return { allies = allies, requests = requests, traitor = math.max(0, math.ceil((n.traitorUntil or 0) - self.time)) }
 end
 
 -- Desembarco anfibio: toma un bloque 3x3 de tierra
@@ -1887,6 +2024,7 @@ function Engine:getMe(n)
 		cells = n.cells,
 		alive = n.alive,
 		eliminated = n.eliminated == true,
+		ally = self:allySnapshot(n),
 		spawned = n.spawned,
 		capital = n.capital,
 		defenseAI = n.defenseAI,
