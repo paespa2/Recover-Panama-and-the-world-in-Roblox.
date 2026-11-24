@@ -417,18 +417,18 @@ ratioLabel.ZIndex = 22
 ratioLabel.Parent = statsRow
 
 local ratioButtons = {}
-local ratios = { 0.2, 0.4, 0.6, 0.8, 1.0 }
+local ratios = { 0.1, 0.2, 0.25, 0.5, 0.75, 1.0 }
 for idx, r in ipairs(ratios) do
 	local btn = Instance.new("TextButton")
 	btn.Name = "Ratio_" .. math.floor(r * 100)
-	btn.Size = UDim2.fromOffset(40, 26)
-	btn.Position = UDim2.fromOffset(473 + (idx - 1) * 44, 4)
-	btn.BackgroundColor3 = (r == 0.5 or r == 0.6) and Color3.fromRGB(0, 180, 220) or Color3.fromRGB(30, 42, 64)
+	btn.Size = UDim2.fromOffset(36, 26)
+	btn.Position = UDim2.fromOffset(473 + (idx - 1) * 39, 4)
+	btn.BackgroundColor3 = (r == 0.25) and Color3.fromRGB(0, 180, 220) or Color3.fromRGB(30, 42, 64)
 	btn.BorderSizePixel = 0
 	btn.Font = Enum.Font.GothamBlack
 	btn.Text = math.floor(r * 100) .. "%"
 	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.TextSize = 11
+	btn.TextSize = 10
 	btn.ZIndex = 22
 	btn.Parent = statsRow
 
@@ -2399,15 +2399,15 @@ local function handleMapClick(cell)
 	-- Fase de Batalla
 	if state.actionMode == "ATTACK" then
 		WorldCommand:FireServer({ a = "ATTACK", cell = cell, ratio = state.attackRatio })
-		-- Feedback visual inmediato: efecto onda de ataque en el cursor
+		-- Feedback visual inmediato estilo FrontWars: onda de choque concéntrica y pulso de conquista
 		local cx = cell % state.w
 		local cy = math.floor(cell / state.w)
 		local ripple = Instance.new("Frame")
 		ripple.AnchorPoint = Vector2.new(0.5, 0.5)
 		ripple.Position = UDim2.fromScale((cx + 0.5) / state.w, (cy + 0.5) / state.h)
 		ripple.Size = UDim2.fromScale(6 / state.w, 6 / state.h)
-		ripple.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-		ripple.BackgroundTransparency = 0.2
+		ripple.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
+		ripple.BackgroundTransparency = 0.15
 		ripple.BorderSizePixel = 0
 		ripple.ZIndex = 25
 		ripple.Parent = mapCanvas
@@ -2416,8 +2416,14 @@ local function handleMapClick(cell)
 		rc.CornerRadius = UDim.new(1, 0)
 		rc.Parent = ripple
 
-		local tw = TweenService:Create(ripple, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.fromScale(28 / state.w, 28 / state.h),
+		local strk = Instance.new("UIStroke")
+		strk.Color = Color3.fromRGB(255, 230, 40)
+		strk.Thickness = 2
+		strk.Transparency = 0.2
+		strk.Parent = ripple
+
+		local tw = TweenService:Create(ripple, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromScale(36 / state.w, 36 / state.h),
 			BackgroundTransparency = 1,
 		})
 		tw:Play()
@@ -2436,6 +2442,84 @@ local function handleMapClick(cell)
 		WorldCommand:FireServer({ a = "NUKE", cell = cell })
 		setActionMode("ATTACK")
 	end
+end
+
+local radialMenu = Instance.new("Frame")
+radialMenu.Name = "RadialMenu"
+radialMenu.Size = UDim2.fromOffset(180, 180)
+radialMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+radialMenu.BackgroundColor3 = Color3.fromRGB(18, 26, 42)
+radialMenu.BackgroundTransparency = 0.1
+radialMenu.Visible = false
+radialMenu.ZIndex = 60
+radialMenu.Parent = root
+roundCorners(radialMenu, 90)
+
+local radialStroke = Instance.new("UIStroke")
+radialStroke.Color = Color3.fromRGB(0, 200, 240)
+radialStroke.Thickness = 2
+radialStroke.Parent = radialMenu
+
+local radialTitle = Instance.new("TextLabel")
+radialTitle.Size = UDim2.new(1, -20, 0, 24)
+radialTitle.Position = UDim2.fromOffset(10, 8)
+radialTitle.BackgroundTransparency = 1
+radialTitle.Font = Enum.Font.GothamBlack
+radialTitle.Text = "ACCIÓN RÁPIDA"
+radialTitle.TextColor3 = Color3.fromRGB(255, 230, 40)
+radialTitle.TextSize = 10
+radialTitle.ZIndex = 61
+radialTitle.Parent = radialMenu
+
+local radialTargetCell = -1
+
+local function createRadialBtn(text, icon, posOffset, onClick)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(72, 34)
+	b.Position = posOffset
+	b.BackgroundColor3 = Color3.fromRGB(30, 44, 70)
+	b.BorderSizePixel = 0
+	b.Font = Enum.Font.GothamBold
+	b.Text = icon .. "\n" .. text
+	b.TextColor3 = Color3.fromRGB(255, 255, 255)
+	b.TextSize = 9
+	b.ZIndex = 62
+	b.Parent = radialMenu
+	roundCorners(b, 6)
+	b.MouseButton1Click:Connect(function()
+		radialMenu.Visible = false
+		if radialTargetCell >= 0 then
+			onClick(radialTargetCell)
+		end
+	end)
+	return b
+end
+
+createRadialBtn("ATACAR", "⚔️", UDim2.fromOffset(54, 38), function(c)
+	WorldCommand:FireServer({ a = "ATTACK", cell = c, ratio = state.attackRatio })
+end)
+
+createRadialBtn("ALIANZA", "🤝", UDim2.fromOffset(10, 80), function(c)
+	local targetId = buffer.readu8(state.owner, c)
+	if targetId > 0 and targetId ~= state.myId then
+		WorldCommand:FireServer({ a = "ALLY_REQUEST", target = targetId })
+		state.showToast("🤝 Petición de alianza enviada", Color3.fromRGB(0, 220, 255))
+	end
+end)
+
+createRadialBtn("CONSTRUIR", "🏢", UDim2.fromOffset(98, 80), function(c)
+	setActionMode("BUILD_City")
+	WorldCommand:FireServer({ a = "BUILD", kind = "City", cell = c })
+end)
+
+createRadialBtn("CANCELAR", "❌", UDim2.fromOffset(54, 126), function()
+	radialMenu.Visible = false
+end)
+
+local function openRadialMenu(screenPos, cell)
+	radialTargetCell = cell
+	radialMenu.Position = UDim2.fromOffset(screenPos.X, screenPos.Y)
+	radialMenu.Visible = true
 end
 
 -- ============================================================================
@@ -2533,6 +2617,12 @@ UserInputService.InputEnded:Connect(function(input)
 		local cell = screenToCell(Vector2.new(input.Position.X, input.Position.Y))
 		if cell >= 0 then
 			handleMapClick(cell)
+		end
+	elseif pressesPan and not drag.moved then
+		-- FrontWars.io: Clic derecho sobre territorio abre el Menú Radial rápido
+		local cell = screenToCell(Vector2.new(input.Position.X, input.Position.Y))
+		if cell >= 0 then
+			openRadialMenu(Vector2.new(input.Position.X, input.Position.Y), cell)
 		end
 	end
 	drag.active = false
