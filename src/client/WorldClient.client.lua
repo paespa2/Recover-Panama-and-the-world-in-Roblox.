@@ -1676,6 +1676,7 @@ edgeLayer.Name = "EdgeLayer"
 edgeLayer.Size = UDim2.fromScale(1, 1)
 edgeLayer.BackgroundTransparency = 1
 edgeLayer.BorderSizePixel = 0
+edgeLayer.Visible = false -- Desactivada la frontera cuadriculada rígida: expansión 100% por partículas orgánicas
 edgeLayer.ZIndex = 6
 edgeLayer.Parent = mapCanvas
 
@@ -1767,6 +1768,9 @@ end
 
 -- Recalcula las 4 líneas de un bloque según el dueño de sus vecinos (el mundo da la vuelta en horizontal)
 local function updateBlockEdges(bi)
+	if not edgeLayer.Visible then
+		return
+	end
 	local blocks = state.blocks
 	local b = blocks[bi]
 	if not b then
@@ -3465,105 +3469,213 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================================
--- FRENTE DE CONQUISTA: animación de expansión a escala de celda
--- Cada celda que cambia de dueño aparece como un cuadro de UNA celda, claro, que se apaga en ~1,3 s mientras el
--- tinte de bloques ya recoge el cambio. Se ve avanzar el territorio píxel a píxel aunque el mapa vaya en bloques.
--- Solo se animan celdas visibles, con presupuesto por actualización y tope de cuadros activos (rendimiento).
+-- FRENTE DE EXPANSIÓN ORGÁNICA Y FLUJO INTERNO DE PARTÍCULAS (ESTILO FRONTWARS / CONQUR)
+-- Las celdas conquistadas nacen como partículas circulares brillantes que se expanden en ondas fluidas.
+-- No hay frontera cuadriculada rígida; el avance es un frente suave de partículas orgánicas.
 -- ============================================================================
-local FRONT_MAX_ACTIVE = 5000
-local FRONT_PER_DIFF = 500
-local FRONT_FADE = 1.3
-local front = {
-	layer = nil,
-	free = {},
-	active = {},
-	count = 0,
-	chance = 1,
-	x0 = 0,
-	x1 = -1,
-	y0 = 0,
-	y1 = -1,
-}
+local frontBegin, frontPush
+do
+	local FRONT_MAX_ACTIVE = 2500
+	local FRONT_PER_DIFF = 400
+	local FRONT_FADE = 1.1
+	local front = {
+		layer = nil,
+		free = {},
+		active = {},
+		count = 0,
+		chance = 1,
+		x0 = 0,
+		x1 = -1,
+		y0 = 0,
+		y1 = -1,
+	}
 
--- Se llama una vez por cada paquete de cambios: calcula la zona visible y qué fracción de celdas se animará
-local function frontBegin(changes)
-	if not front.layer then
-		local l = Instance.new("Frame")
-		l.Name = "FrontLayer"
-		l.Size = UDim2.fromScale(1, 1)
-		l.BackgroundTransparency = 1
-		l.BorderSizePixel = 0
-		l.ZIndex = 4
-		l.Parent = mapCanvas
-		front.layer = l
-	end
-	front.chance = math.min(1, FRONT_PER_DIFF / math.max(1, changes))
-	local w, h = state.w, state.h
-	local vs = mapContainer.AbsoluteSize
-	local cellW = BASE_WIDTH * state.zoom / w
-	local cellH = BASE_HEIGHT * state.zoom / h
-	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
-	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
-	front.x0 = math.max(0, math.floor(-left / cellW))
-	front.x1 = math.min(w - 1, math.ceil((vs.X - left) / cellW))
-	front.y0 = math.max(0, math.floor(-top / cellH))
-	front.y1 = math.min(h - 1, math.ceil((vs.Y - top) / cellH))
-end
+	-- Swarm de partículas internas: tropas marchando desde el interior hacia las fronteras
+	local SWARM_MAX = 100
+	local swarm = {
+		free = {},
+		active = {},
+		spawnAcc = 0,
+	}
 
-local function frontPush(cell, ownerId)
-	if front.count >= FRONT_MAX_ACTIVE or math.random() > front.chance then
-		return
-	end
-	local w = state.w
-	local x, y = cell % w, cell // w
-	if x < front.x0 or x > front.x1 or y < front.y0 or y > front.y1 then
-		return
-	end
-	local n = state.rosterById[ownerId]
-	if not n then
-		return
-	end
-	local f = table.remove(front.free)
-	if not f then
-		f = Instance.new("Frame")
-		f.BorderSizePixel = 0
-		f.ZIndex = 4
-		f.Size = UDim2.fromScale(1 / w, 1 / state.h)
-		f.Parent = front.layer
-	end
-	f.Position = UDim2.fromScale(x / w, y / state.h)
-	f.BackgroundColor3 = n.color:Lerp(Color3.new(1, 1, 1), 0.5)
-	f.BackgroundTransparency = 0.05
-	f.Visible = true
-	front.active[#front.active + 1] = { f = f, t0 = os.clock() }
-	front.count += 1
-end
-
-local frontAcc = 0
-RunService.Heartbeat:Connect(function(dt)
-	frontAcc += dt
-	if frontAcc < 0.066 then -- ~15 actualizaciones por segundo bastan para un desvanecido
-		return
-	end
-	frontAcc = 0
-	local now = os.clock()
-	local act = front.active
-	local i = 1
-	while i <= #act do
-		local a = act[i]
-		local t = (now - a.t0) / FRONT_FADE
-		if t >= 1 then
-			a.f.Visible = false
-			table.insert(front.free, a.f)
-			front.count -= 1
-			act[i] = act[#act]
-			act[#act] = nil
-		else
-			a.f.BackgroundTransparency = 0.05 + 0.95 * t * t -- se mantiene visible al principio y se apaga al final
-			i += 1
+	function frontBegin(changes)
+		if not front.layer then
+			local l = Instance.new("Frame")
+			l.Name = "FrontLayer"
+			l.Size = UDim2.fromScale(1, 1)
+			l.BackgroundTransparency = 1
+			l.BorderSizePixel = 0
+			l.ZIndex = 5
+			l.Parent = mapCanvas
+			front.layer = l
 		end
+		front.chance = math.min(1, FRONT_PER_DIFF / math.max(1, changes))
+		local w, h = state.w, state.h
+		local vs = mapContainer.AbsoluteSize
+		local cellW = BASE_WIDTH * state.zoom / w
+		local cellH = BASE_HEIGHT * state.zoom / h
+		local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
+		local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
+		front.x0 = math.max(0, math.floor(-left / cellW))
+		front.x1 = math.min(w - 1, math.ceil((vs.X - left) / cellW))
+		front.y0 = math.max(0, math.floor(-top / cellH))
+		front.y1 = math.min(h - 1, math.ceil((vs.Y - top) / cellH))
 	end
-end)
+
+	function frontPush(cell, ownerId)
+		if front.count >= FRONT_MAX_ACTIVE or math.random() > front.chance then
+			return
+		end
+		local w, h = state.w, state.h
+		local x, y = cell % w, cell // w
+		if x < front.x0 or x > front.x1 or y < front.y0 or y > front.y1 then
+			return
+		end
+		local n = state.rosterById[ownerId]
+		if not n then
+			return
+		end
+		local f = table.remove(front.free)
+		if not f then
+			f = Instance.new("Frame")
+			f.BorderSizePixel = 0
+			f.AnchorPoint = Vector2.new(0.5, 0.5)
+			f.ZIndex = 5
+			f.Parent = front.layer
+			roundCorners(f, 100) -- Partícula circular orgánica (no cuadrada)
+		end
+		f.Position = UDim2.fromScale((x + 0.5) / w, (y + 0.5) / h)
+		f.Size = UDim2.fromScale(1.4 / w, 1.4 / h)
+		f.BackgroundColor3 = n.color:Lerp(Color3.new(1, 1, 1), 0.7)
+		f.BackgroundTransparency = 0.05
+		f.Visible = true
+		front.active[#front.active + 1] = {
+			f = f,
+			t0 = os.clock(),
+			baseColor = n.color,
+			w = w,
+			h = h,
+		}
+		front.count += 1
+	end
+
+	local function spawnTroopParticle(x0, y0, targetCell, color)
+		if #swarm.active >= SWARM_MAX or not front.layer then
+			return
+		end
+		local p = table.remove(swarm.free)
+		if not p then
+			p = Instance.new("Frame")
+			p.BorderSizePixel = 0
+			p.AnchorPoint = Vector2.new(0.5, 0.5)
+			p.ZIndex = 5
+			p.Parent = front.layer
+			roundCorners(p, 100)
+		end
+		local w, h = state.w, state.h
+		local tx, ty = targetCell % w, targetCell // w
+		p.Size = UDim2.fromScale(1.1 / w, 1.1 / h)
+		p.Position = UDim2.fromScale((x0 + 0.5) / w, (y0 + 0.5) / h)
+		p.BackgroundColor3 = color:Lerp(Color3.new(1, 1, 1), 0.5)
+		p.BackgroundTransparency = 0.1
+		p.Visible = true
+		swarm.active[#swarm.active + 1] = {
+			p = p,
+			t0 = os.clock(),
+			dur = 0.6 + math.random() * 0.4,
+			sx = (x0 + 0.5) / w,
+			sy = (y0 + 0.5) / h,
+			tx = (tx + 0.5) / w,
+			ty = (ty + 0.5) / h,
+		}
+	end
+
+	local frontAcc = 0
+	RunService.Heartbeat:Connect(function(dt)
+		frontAcc += dt
+		if frontAcc < 0.033 then -- ~30 FPS para movimiento ultra fluido de partículas
+			return
+		end
+		frontAcc = 0
+		local now = os.clock()
+
+		-- 1. Expansión orgánica de ondas de partículas en el frente conquistado
+		local act = front.active
+		local i = 1
+		while i <= #act do
+			local a = act[i]
+			local t = (now - a.t0) / FRONT_FADE
+			if t >= 1 then
+				a.f.Visible = false
+				table.insert(front.free, a.f)
+				front.count -= 1
+				act[i] = act[#act]
+				act[#act] = nil
+			else
+				-- Expansión suave hacia fuera (1.2 -> 2.6 tamaño)
+				local grow = 1.2 + 1.4 * math.sin(t * math.pi * 0.5)
+				a.f.Size = UDim2.fromScale(grow / a.w, grow / a.h)
+				a.f.BackgroundTransparency = 0.05 + 0.95 * (t ^ 1.4)
+				a.f.BackgroundColor3 = a.baseColor:Lerp(Color3.new(1, 1, 1), 0.7 * (1 - t))
+				i += 1
+			end
+		end
+
+		-- 2. Flujo de partículas internas marchando desde el interior hacia las fronteras
+		swarm.spawnAcc += dt
+		if swarm.spawnAcc >= 0.12 then
+			swarm.spawnAcc = 0
+			local me = state.me
+			if me and me.alive and me.capital and state.w and state.h then
+				local w, h = state.w, state.h
+				local cap = me.capital
+				local cx, cy = cap % w, cap // w
+				local myN = state.rosterById[state.myId]
+				local col = if myN and myN.color then myN.color else Color3.fromRGB(0, 255, 200)
+
+				-- Si estamos atacando a alguien, las partículas van directo al objetivo
+				local attacks = me.attacks or {}
+				local tgtCell = nil
+				if #attacks > 0 and attacks[1].target then
+					local tgtNation = state.rosterById[attacks[1].target]
+					if tgtNation and tgtNation.capital then
+						tgtCell = tgtNation.capital
+					end
+				end
+
+				-- O emite hacia una celda aleatoria de la frontera
+				if not tgtCell then
+					local angle = math.random() * math.pi * 2
+					local dist = 6 + math.random() * 14
+					local fx = math.clamp(math.floor(cx + math.cos(angle) * dist), 0, w - 1)
+					local fy = math.clamp(math.floor(cy + math.sin(angle) * dist), 0, h - 1)
+					tgtCell = fy * w + fx
+				end
+
+				spawnTroopParticle(cx, cy, tgtCell, col)
+			end
+		end
+
+		local sAct = swarm.active
+		local j = 1
+		while j <= #sAct do
+			local s = sAct[j]
+			local st = (now - s.t0) / s.dur
+			if st >= 1 then
+				s.p.Visible = false
+				table.insert(swarm.free, s.p)
+				sAct[j] = sAct[#sAct]
+				sAct[#sAct] = nil
+			else
+				local curX = s.sx + (s.tx - s.sx) * st
+				local curY = s.sy + (s.ty - s.sy) * st
+				s.p.Position = UDim2.fromScale(curX, curY)
+				s.p.BackgroundTransparency = 0.1 + 0.6 * st
+				j += 1
+			end
+		end
+	end)
+end
 
 -- ============================================================================
 -- TOOLTIP DE TERRITORIO: al pasar el ratón por el mapa muestra de quién es esa tierra

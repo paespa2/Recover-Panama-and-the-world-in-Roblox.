@@ -304,8 +304,8 @@ function Engine.new(planetId, botCount, difficulty, mode, seed)
 
 	self.mode = "FREE"
 	self.teamMode = false
-	-- Estilo de propagación: CELL (célula redonda), ORGANIC (frontera irregular), TENDRIL (tentáculos)
-	self.propagation = "CELL"
+	-- Estilo de propagación: ORGANIC (frontera orgánica irregular con flujo de partículas), CELL (redonda), TENDRIL (tentáculos)
+	self.propagation = "ORGANIC"
 	if (mode == "COUNTRIES" or mode == "CONTINENTS") and self.planetId == "EARTH" and CountryData then
 		self.mode = "COUNTRIES"
 		self.teamMode = (mode == "CONTINENTS") -- cada continente es un equipo: los aliados no se atacan
