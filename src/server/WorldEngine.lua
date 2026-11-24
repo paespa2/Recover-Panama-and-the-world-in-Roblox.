@@ -189,6 +189,40 @@ end
 -- ============================================================================
 -- CONSTRUCCIÓN
 -- ============================================================================
+-- Coste de conquista por terreno (u8: 100 = llanura, hasta 180 = montaña muy escarpada). Se deduce de la rugosidad del
+-- relieve sombreado de la imagen del mapa: el gradiente de luminosidad es alto donde hay montañas y bajo en llanuras.
+local function buildTerrainCost(planetId, land, w, h)
+	local ok, base = pcall(WorldGrid.BuildBase, planetId, land)
+	if not ok or not base or buffer.len(base) ~= w * h * 3 then
+		return nil
+	end
+	local lum = buffer.create(w * h)
+	for i = 0, w * h - 1 do
+		local o = i * 3
+		buffer.writeu8(
+			lum,
+			i,
+			(buffer.readu8(base, o) * 3 + buffer.readu8(base, o + 1) * 6 + buffer.readu8(base, o + 2)) // 10
+		)
+	end
+	local cost = buffer.create(w * h)
+	for y = 0, h - 1 do
+		local up, down = math.max(0, y - 1), math.min(h - 1, y + 1)
+		for x = 0, w - 1 do
+			local i = y * w + x
+			local f = 100
+			if buffer.readu8(land, i) == 1 then
+				local l, r = (x - 1) % w, (x + 1) % w
+				local gx = math.abs(buffer.readu8(lum, y * w + r) - buffer.readu8(lum, y * w + l))
+				local gy = math.abs(buffer.readu8(lum, down * w + x) - buffer.readu8(lum, up * w + x))
+				f = 100 + math.min(70, math.floor((gx + gy) * 1.2))
+			end
+			buffer.writeu8(cost, i, f)
+		end
+	end
+	return cost
+end
+
 function Engine.new(planetId, botCount, difficulty, mode)
 	local grid = WorldGrid.Generate(planetId)
 	local self = setmetatable({}, Engine)
@@ -198,6 +232,7 @@ function Engine.new(planetId, botCount, difficulty, mode)
 	self.size = grid.w * grid.h
 	self.land = grid.land
 	self.landCount = grid.landCount
+	self.terrainCost = buildTerrainCost(self.planetId, grid.land, grid.w, grid.h) -- nil si no hay relieve
 	self.owner = buffer.create(self.size)
 	self.nations = {}
 	self.list = {}
@@ -691,6 +726,15 @@ end
 -- ============================================================================
 -- ATAQUES
 -- ============================================================================
+-- Multiplicador de coste del terreno de una celda (1 = llanura, hasta 1,8 en montaña escarpada)
+function Engine:terrain(i)
+	local c = self.terrainCost
+	if not c then
+		return 1
+	end
+	return buffer.readu8(c, i) / 100
+end
+
 function Engine:fillQueue(n, atk)
 	local owner, land = self.owner, self.land
 	local nb = self._nb
@@ -713,6 +757,7 @@ function Engine:fillQueue(n, atk)
 						and #queue < 25000
 					then
 						seen[j] = true
+						atk.prio[j] = self:terrain(j) -- llegada: las celdas fáciles se toman antes
 						queue[#queue + 1] = j
 					end
 				end
@@ -756,7 +801,8 @@ function Engine:launchAttack(n, targetId, ratio, targetCell)
 			existing = a
 		end
 	end
-	local atk = existing or { target = targetId, troops = 0, queue = {}, refills = 0, targetCell = targetCell }
+	local atk = existing
+		or { target = targetId, troops = 0, queue = {}, prio = {}, refills = 0, targetCell = targetCell }
 	if targetCell then
 		atk.targetCell = targetCell
 	end
@@ -837,7 +883,7 @@ function Engine:processAttack(n, atk)
 				-- TENDRIL: lo contrario, emite tentáculos hacia fuera.
 				local cx0, cy0 = cap % w, cap // w
 				local best = nil
-				local samples = if style == "CELL" then 6 else 3
+				local samples = if style == "CELL" then 8 else 3
 				for _s = 1, samples do
 					local idx = if _s == 1 then k else self.rng:NextInteger(1, qn)
 					local c = queue[idx]
@@ -847,6 +893,11 @@ function Engine:processAttack(n, atk)
 					local d = dx * dx + dy * dy
 					if style == "TENDRIL" then
 						d = -d
+					end
+					if style == "CELL" then
+						-- Frente de onda: se toma primero la celda con menor "tiempo de llegada" (distancia acumulada
+						-- ponderada por el coste del terreno): redondo en llanura y más lento en montaña
+						d = atk.prio[c] or 0
 					end
 					if not best or d < best then
 						best = d
@@ -910,6 +961,7 @@ function Engine:processAttack(n, atk)
 						end
 					end
 				end
+				cost *= self:terrain(cell) -- las montañas cuestan más tropas
 				if atk.troops < cost then
 					return true
 				end
@@ -922,6 +974,12 @@ function Engine:processAttack(n, atk)
 				for q = 1, cnt do
 					local j = nb[q]
 					if buffer.readu8(owner, j) == target and buffer.readu8(land, j) == 1 and #queue < 25000 then
+						-- llegada = la de la celda conquistada + coste del terreno de la nueva
+						local arrival = (atk.prio[cell] or 0) + self:terrain(j)
+						local oldArrival = atk.prio[j]
+						if not oldArrival or arrival < oldArrival then
+							atk.prio[j] = arrival
+						end
 						queue[#queue + 1] = j
 					end
 				end
