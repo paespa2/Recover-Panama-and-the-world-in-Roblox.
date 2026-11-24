@@ -1671,22 +1671,25 @@ end)
 -- grosor con el color de su dueño, por dentro de su lado. El contorno crece y se redibuja solo al conquistar.
 -- Tu contorno es dorado y late. Con mucho zoom se usa el borde celda por celda del nivel de detalle.
 -- ----------------------------------------------------------------------------
+-- ============================================================================
+-- FRONTERAS DE PÍXELES FINOS (LÍNEAS DELGADAS POR PEQUEÑOS PÍXELES ESTILO FRONTWARS)
+-- Cada frontera entre naciones o costa se dibuja como una línea nítida de 1.5 píxeles de grosor,
+-- celda por celda exacta, trazando el perímetro de cada país con su color brillante.
+-- ============================================================================
 local edgeLayer = Instance.new("Frame")
-edgeLayer.Name = "EdgeLayer"
+edgeLayer.Name = "PixelEdgeLayer"
 edgeLayer.Size = UDim2.fromScale(1, 1)
 edgeLayer.BackgroundTransparency = 1
 edgeLayer.BorderSizePixel = 0
-edgeLayer.Visible = false -- Desactivada la frontera cuadriculada rígida: expansión 100% por partículas orgánicas
+edgeLayer.Visible = true
 edgeLayer.ZIndex = 6
 edgeLayer.Parent = mapCanvas
 
-local edgeFrames = {} -- [bi * 4 + lado] = Frame (0 derecha, 1 abajo, 2 izquierda, 3 arriba)
+local edgeFrames = {} -- [cell * 4 + side] = Frame
 local edgeFree = {}
-local myEdges = {} -- conjunto de líneas del jugador: laten
+local myEdges = {} -- líneas de la propia nación para efecto de pulso dorado neón
 
--- Color vivo para los contornos: conserva el tono de la nación pero con saturación y brillo altos, para que
--- cada territorio destaque sobre el relieve (los colores de los bots son apagados a propósito en el tinte)
-local EDGE_THICK = 0.5 -- grosor de los contornos de territorio, en celdas (antes 1)
+local LINE_THICK_PX = 1.5
 
 -- Modo equipos: dos dueños del mismo continente son aliados y no se dibuja contorno entre ellos
 local function sameTeam(a, b)
@@ -1698,21 +1701,19 @@ local function sameTeam(a, b)
 end
 state.sameTeam = sameTeam
 
--- Variedad suave: cada nación recibe una tonalidad ligeramente distinta (saturación/brillo/tono) derivada de su
--- id, para que países vecinos de colores parecidos no se confundan y la paleta no sea tan estridente
 local function vividColor(c, id)
 	local h, s = c:ToHSV()
-	local k = ((id or 0) * 37) % 100 / 100 -- 0..1 repetible
-	local sat = math.clamp(s * 1.4, 0.45, 0.78) + (k - 0.5) * 0.16
-	local val = 0.86 + k * 0.14
-	local hue = (h + (k - 0.5) * 0.05) % 1
-	return Color3.fromHSV(hue, math.clamp(sat, 0.35, 0.85), math.clamp(val, 0.8, 1))
+	local k = ((id or 0) * 37) % 100 / 100
+	local sat = math.clamp(s * 1.45, 0.55, 0.9) + (k - 0.5) * 0.12
+	local val = 0.9 + k * 0.1
+	local hue = (h + (k - 0.5) * 0.04) % 1
+	return Color3.fromHSV(hue, math.clamp(sat, 0.45, 0.95), math.clamp(val, 0.85, 1))
 end
 state.vividColor = vividColor
 
 local function edgeColor(ownerId)
 	if ownerId == state.myId then
-		return Color3.fromRGB(255, 230, 70)
+		return Color3.fromRGB(255, 235, 60)
 	end
 	local n = state.rosterById[ownerId]
 	if n and n.color then
@@ -1721,8 +1722,8 @@ local function edgeColor(ownerId)
 	return Color3.new(1, 1, 1)
 end
 
-local function setEdge(bi, side, show, ownerId)
-	local key = bi * 4 + side
+local function setCellEdge(cell, side, show, ownerId)
+	local key = cell * 4 + side
 	local f = edgeFrames[key]
 	if not show then
 		if f then
@@ -1738,62 +1739,66 @@ local function setEdge(bi, side, show, ownerId)
 		if not f then
 			f = Instance.new("Frame")
 			f.BorderSizePixel = 0
-			f.BackgroundTransparency = 0.12 -- casi pleno pero suave: contorno fino y natural
 			f.ZIndex = 6
 			f.Parent = edgeLayer
 		end
 		edgeFrames[key] = f
 		local w, h = state.w, state.h
-		local x0 = ((bi - 1) % state.blockW) * BLOCK
-		local y0 = ((bi - 1) // state.blockW) * BLOCK
-		local t = EDGE_THICK -- línea fina: la mitad de una celda, pegada al borde del bloque
-		if side == 0 then
-			f.Position = UDim2.fromScale((x0 + BLOCK - t) / w, y0 / h)
-			f.Size = UDim2.fromScale(t / w, BLOCK / h)
-		elseif side == 1 then
-			f.Position = UDim2.fromScale(x0 / w, (y0 + BLOCK - t) / h)
-			f.Size = UDim2.fromScale(BLOCK / w, t / h)
-		elseif side == 2 then
-			f.Position = UDim2.fromScale(x0 / w, y0 / h)
-			f.Size = UDim2.fromScale(t / w, BLOCK / h)
-		else
-			f.Position = UDim2.fromScale(x0 / w, y0 / h)
-			f.Size = UDim2.fromScale(BLOCK / w, t / h)
+		local x, y = cell % w, cell // w
+
+		-- Líneas delgadas de 1.5 píxeles exactos trazando cada píxel de celda
+		if side == 0 then -- Derecha (vertical)
+			f.AnchorPoint = Vector2.new(0.5, 0)
+			f.Position = UDim2.fromScale((x + 1) / w, y / h)
+			f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
+		elseif side == 1 then -- Abajo (horizontal)
+			f.AnchorPoint = Vector2.new(0, 0.5)
+			f.Position = UDim2.fromScale(x / w, (y + 1) / h)
+			f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
+		elseif side == 2 then -- Izquierda (vertical)
+			f.AnchorPoint = Vector2.new(0.5, 0)
+			f.Position = UDim2.fromScale(x / w, y / h)
+			f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
+		else -- Arriba (horizontal)
+			f.AnchorPoint = Vector2.new(0, 0.5)
+			f.Position = UDim2.fromScale(x / w, y / h)
+			f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
 		end
+		f.BackgroundTransparency = 0.05
 		f.Visible = true
 	end
 	f.BackgroundColor3 = edgeColor(ownerId)
 	myEdges[f] = if ownerId == state.myId then true else nil
 end
 
--- Recalcula las 4 líneas de un bloque según el dueño de sus vecinos (el mundo da la vuelta en horizontal)
-local function updateBlockEdges(bi)
-	if not edgeLayer.Visible then
+local function updateCellEdges(cell)
+	local owner = state.owner
+	if not owner or not state.w or state.w == 0 then
 		return
 	end
-	local blocks = state.blocks
-	local b = blocks[bi]
-	if not b then
+	local o = buffer.readu8(owner, cell)
+	if o == 0 then
+		setCellEdge(cell, 0, false)
+		setCellEdge(cell, 1, false)
+		setCellEdge(cell, 2, false)
+		setCellEdge(cell, 3, false)
 		return
 	end
-	local bw, bh = state.blockW, state.blockH
-	local bx, by = (bi - 1) % bw, (bi - 1) // bw
-	local o = b.owner or 0
-	local function neighbor(nbx, nby)
-		if nby < 0 or nby >= bh then
-			return nil -- por arriba y por abajo el mapa termina: no hay contorno
-		end
-		local nb = blocks[nby * bw + (nbx % bw) + 1]
-		return if nb then (nb.owner or 0) else nil
-	end
-	local r, d, l, u = neighbor(bx + 1, by), neighbor(bx, by + 1), neighbor(bx - 1, by), neighbor(bx, by - 1)
-	setEdge(bi, 0, o ~= 0 and r ~= nil and r ~= o and not sameTeam(r, o), o)
-	setEdge(bi, 1, o ~= 0 and d ~= nil and d ~= o and not sameTeam(d, o), o)
-	setEdge(bi, 2, o ~= 0 and l ~= nil and l ~= o and not sameTeam(l, o), o)
-	setEdge(bi, 3, o ~= 0 and u ~= nil and u ~= o and not sameTeam(u, o), o)
+	local w, h = state.w, state.h
+	local x, y = cell % w, cell // w
+
+	local r = buffer.readu8(owner, y * w + (if x == w - 1 then 0 else x + 1))
+	local d = if y < h - 1 then buffer.readu8(owner, (y + 1) * w + x) else 0
+	local l = buffer.readu8(owner, y * w + (if x == 0 then w - 1 else x - 1))
+	local u = if y > 0 then buffer.readu8(owner, (y - 1) * w + x) else 0
+
+	setCellEdge(cell, 0, r ~= o and not sameTeam(r, o), o)
+	setCellEdge(cell, 1, d ~= o and not sameTeam(d, o), o)
+	setCellEdge(cell, 2, l ~= o and not sameTeam(l, o), o)
+	setCellEdge(cell, 3, u ~= o and not sameTeam(u, o), o)
 end
 
--- Reconstruye todos los contornos (tras el primer dibujado). Por tandas para no agotar el tiempo del script.
+-- Reconstruye todas las líneas de frontera pixel a pixel
 local rebuildEdges
 function rebuildEdges()
 	state.rebuildEdges = rebuildEdges
@@ -1803,15 +1808,23 @@ function rebuildEdges()
 		edgeFrames[key] = nil
 	end
 	table.clear(myEdges)
-	for bi = 1, state.blockW * state.blockH do
-		updateBlockEdges(bi)
-		if bi % 1500 == 0 then
+	local owner = state.owner
+	local w, h = state.w, state.h
+	if not owner or not w or w == 0 then
+		return
+	end
+	local total = w * h
+	for cell = 0, total - 1 do
+		if buffer.readu8(owner, cell) ~= 0 then
+			updateCellEdges(cell)
+		end
+		if cell % 3000 == 0 then
 			task.wait()
 		end
 	end
 end
 
--- El contorno del jugador late entre dorado y blanco (unas 8 veces por segundo basta)
+-- El contorno del jugador late con resplandor dorado
 local edgePulseAcc = 0
 RunService.Heartbeat:Connect(function(dt)
 	edgePulseAcc += dt
@@ -1820,7 +1833,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 	edgePulseAcc = 0
 	local k = (math.sin(os.clock() * 4) + 1) / 2
-	local c = Color3.fromRGB(255, 215, 40):Lerp(Color3.fromRGB(255, 255, 235), k)
+	local c = Color3.fromRGB(255, 215, 40):Lerp(Color3.fromRGB(255, 255, 240), k)
 	for f in pairs(myEdges) do
 		f.BackgroundColor3 = c
 	end
@@ -1904,13 +1917,9 @@ local function recolorBlock(bi)
 	local ownerChanged = b.owner ~= ownerNow
 	b.owner = ownerNow
 	-- Cambió el dueño del bloque: se redibujan sus contornos y los de sus 4 vecinos (comparten lado)
+	-- Las fronteras ahora se dibujan pixel a pixel directamente desde applyDiff
 	if ownerChanged and state.animReady then
-		local bw = state.blockW
-		updateBlockEdges(bi)
-		updateBlockEdges(bi - 1 + (if (bi - 1) % bw == 0 then bw else 0)) -- izquierda (con vuelta)
-		updateBlockEdges(bi + 1 - (if bi % bw == 0 then bw else 0)) -- derecha (con vuelta)
-		updateBlockEdges(bi - bw)
-		updateBlockEdges(bi + bw)
+		-- sin contorno de bloque
 	end
 end
 
@@ -4327,6 +4336,15 @@ local function applyDiff(diffBuf)
 			end
 			if animateFront and ownerId ~= 0 and previous ~= ownerId then
 				frontPush(cell, ownerId)
+			end
+			if state.animReady and updateCellEdges then
+				updateCellEdges(cell)
+				local w, h = state.w, state.h
+				local x, y = cell % w, cell // w
+				updateCellEdges(y * w + (if x == w - 1 then 0 else x + 1))
+				updateCellEdges(y * w + (if x == 0 then w - 1 else x - 1))
+				if y > 0 then updateCellEdges(cell - w) end
+				if y < h - 1 then updateCellEdges(cell + w) end
 			end
 		end
 	end
