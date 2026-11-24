@@ -596,6 +596,7 @@ function Engine:spawnNation(n, cell)
 	n.capital = cell
 	n.troops = START_TROOPS
 	n.attacks = {}
+	self:fx("CAPITAL_SPAWN", cell, 8)
 	return n.alive
 end
 
@@ -701,6 +702,9 @@ function Engine:transferCountry(c, n)
 	n.attacks = {}
 	n.spawned = true
 	n.alive = n.cells > 0
+	if n.capital and n.capital >= 0 then
+		self:fx("CAPITAL_SPAWN", n.capital, 8)
+	end
 	n.claimedFrom = c -- para poder devolver el país si el jugador cambia de elección durante la aparición
 	n.name = string.format("%s (%s)", c.name, n.name)
 	c.capital = nil

@@ -932,6 +932,18 @@ local function playWeaponFx(fx)
 	if not state.initialized or type(fx) ~= "table" or not fx.cell or fx.cell >= state.w * state.h then
 		return
 	end
+	if fx.kind == "CAPITAL_SPAWN" then
+		-- Efecto de fundación de capital estilo FrontWars: 3 ondas concéntricas de pulso dorado
+		local d = (fx.r or 8) * 2 + 1
+		local col = fx.color or Color3.fromRGB(255, 215, 0)
+		for k = 0, 2 do
+			task.delay(k * 0.16, function()
+				fxCircle(fx.cell, 1, d * (0.8 + k * 0.4), col, 0.2, 0.85 + k * 0.2, 16)
+			end)
+		end
+		fxCircle(fx.cell, 1, d * 0.5, Color3.new(1, 1, 1), 0.05, 0.55, 17)
+		return
+	end
 	if fx.kind == "WARN" then
 		-- Aviso de desastre: anillo rojo que late 4 veces sobre la zona de peligro
 		local d = (fx.r or 8) * 2 + 1
@@ -989,7 +1001,12 @@ local function troopText(k)
 	if k >= 1000000 then
 		return string.format("%.1fM", k / 1000000)
 	elseif k >= 1000 then
-		return string.format("%dK", math.floor(k / 1000))
+		local frac = (k % 1000) // 100
+		if frac > 0 then
+			return string.format("%.1fK", k / 1000)
+		else
+			return string.format("%dK", math.floor(k / 1000))
+		end
 	end
 	return tostring(k)
 end
@@ -2383,10 +2400,11 @@ local function handleMapClick(cell)
 	end
 	if needsSpawn then
 		WorldCommand:FireServer({ a = "SPAWN", cell = cell })
+		playWeaponFx({ kind = "CAPITAL_SPAWN", cell = cell, color = Color3.fromRGB(255, 220, 60), r = 9 })
 		if state.mode == "COUNTRIES" then
-			showToast("🌍 Intentando tomar ese país...", Color3.fromRGB(0, 220, 255))
+			showToast("🌍 Reclamando capital de la nación...", Color3.fromRGB(0, 220, 255))
 		else
-			showToast("📍 Fijando tu ubicación...", Color3.fromRGB(0, 220, 255))
+			showToast("👑 ¡Fundando Capital! Expandiendo territorio inicial...", Color3.fromRGB(255, 220, 60))
 		end
 		return
 	end
@@ -2417,13 +2435,15 @@ local function handleMapClick(cell)
 	if state.actionMode == "ATTACK" then
 		WorldCommand:FireServer({ a = "ATTACK", cell = cell, ratio = state.attackRatio })
 		-- Feedback visual inmediato estilo FrontWars: onda de choque concéntrica y pulso de conquista
+		local o = buffer.readu8(state.owner, cell)
+		local isNeutral = (o == 0)
 		local cx = cell % state.w
 		local cy = math.floor(cell / state.w)
 		local ripple = Instance.new("Frame")
 		ripple.AnchorPoint = Vector2.new(0.5, 0.5)
 		ripple.Position = UDim2.fromScale((cx + 0.5) / state.w, (cy + 0.5) / state.h)
 		ripple.Size = UDim2.fromScale(6 / state.w, 6 / state.h)
-		ripple.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
+		ripple.BackgroundColor3 = if isNeutral then Color3.fromRGB(0, 230, 160) else Color3.fromRGB(255, 40, 40)
 		ripple.BackgroundTransparency = 0.15
 		ripple.BorderSizePixel = 0
 		ripple.ZIndex = 25
@@ -2434,7 +2454,7 @@ local function handleMapClick(cell)
 		rc.Parent = ripple
 
 		local strk = Instance.new("UIStroke")
-		strk.Color = Color3.fromRGB(255, 230, 40)
+		strk.Color = if isNeutral then Color3.fromRGB(255, 235, 90) else Color3.fromRGB(255, 230, 40)
 		strk.Thickness = 2
 		strk.Transparency = 0.2
 		strk.Parent = ripple
@@ -2447,6 +2467,10 @@ local function handleMapClick(cell)
 		tw.Completed:Connect(function()
 			ripple:Destroy()
 		end)
+
+		-- Marcar objetivo para el flujo de tropas de partículas (neutral o enemigo)
+		state.recentTargetCell = cell
+		state.recentTargetTime = os.clock()
 	elseif state.actionMode:sub(1, 6) == "BUILD_" then
 		local kind = state.actionMode:sub(7)
 		WorldCommand:FireServer({ a = "BUILD", kind = kind, cell = cell })
@@ -3440,8 +3464,12 @@ RunService.RenderStepped:Connect(function()
 		placeRing(previewRing, cell, armedInfo.radius * 2 + 1)
 		previewRing.Visible = true
 	elseif canPickFree then
-		previewStroke.Color = if spawnValid(cell) then Color3.fromRGB(70, 255, 150) else Color3.fromRGB(255, 80, 80)
+		local valid = spawnValid(cell)
+		local pulse = 0.5 + 0.5 * math.sin(os.clock() * 6)
+		previewStroke.Color = if valid then Color3.fromRGB(70, 255, 150) else Color3.fromRGB(255, 80, 80)
 		previewRing.BackgroundColor3 = previewStroke.Color
+		previewRing.BackgroundTransparency = if valid then (0.70 + 0.15 * pulse) else 0.85
+		previewStroke.Thickness = if valid then (2.5 + pulse) else 2
 		placeRing(previewRing, cell, 10.4)
 		previewRing.Visible = true
 	else
@@ -3632,7 +3660,8 @@ do
 
 		-- 2. Flujo de partículas internas marchando desde el interior hacia las fronteras
 		swarm.spawnAcc += dt
-		if swarm.spawnAcc >= 0.12 then
+		local spawnInterval = if (state.recentTargetCell and (now - (state.recentTargetTime or 0) < 3.5)) then 0.06 else 0.12
+		if swarm.spawnAcc >= spawnInterval then
 			swarm.spawnAcc = 0
 			local me = state.me
 			if me and me.alive and me.capital and state.w and state.h then
@@ -3642,13 +3671,18 @@ do
 				local myN = state.rosterById[state.myId]
 				local col = if myN and myN.color then myN.color else Color3.fromRGB(0, 255, 200)
 
-				-- Si estamos atacando a alguien, las partículas van directo al objetivo
-				local attacks = me.attacks or {}
+				-- Si el jugador ha hecho clic recientemente en una celda (expansión neutral o ataque),
+				-- o si hay ataques activos del servidor, dirigimos las tropas hacia allí:
 				local tgtCell = nil
-				if #attacks > 0 and attacks[1].target then
-					local tgtNation = state.rosterById[attacks[1].target]
-					if tgtNation and tgtNation.capital then
-						tgtCell = tgtNation.capital
+				if state.recentTargetCell and (now - (state.recentTargetTime or 0) < 4.0) then
+					tgtCell = state.recentTargetCell
+				else
+					local attacks = me.attacks or {}
+					if #attacks > 0 and attacks[1].target then
+						local tgtNation = state.rosterById[attacks[1].target]
+						if tgtNation and tgtNation.capital then
+							tgtCell = tgtNation.capital
+						end
 					end
 				end
 
@@ -4757,14 +4791,30 @@ WorldMe.OnClientEvent:Connect(function(meData)
 			updateMarkers()
 		end
 	end
-	-- Valores reales del servidor: tropas/tope y ritmo por segundo (crecimiento compuesto), oro y su ritmo
+	-- Valores reales del servidor: tropas/tope y ritmo por segundo (crecimiento compuesto estilo FrontWars), oro y su ritmo
+	local tr = meData.troops or 0
+	local maxTr = meData.maxTroops or 10000
+	local trRate = meData.troopRate or 0
+	local pct = if tr > 0 then (trRate / tr) * 100 else 0
+	local isCapped = tr >= maxTr * 0.85
+
 	troopsCard.Text = string.format(
-		"⚔️ Tropas: %d/%d (+%d/s)",
-		meData.troops or 0,
-		meData.maxTroops or 0,
-		math.floor((meData.troopRate or 0) + 0.5)
+		"⚔️ %s / %s (⚡+%.1f%%/s)%s",
+		troopText(tr),
+		troopText(maxTr),
+		pct,
+		if isCapped then " ⚠️ CAP" else ""
 	)
-	goldCard.Text = string.format("💰 Oro: %d (+%d/s)", meData.gold or 0, math.floor((meData.goldRate or 0) + 0.5))
+	if isCapped then
+		troopsCard.TextColor3 = Color3.fromRGB(255, 185, 40)
+		if not state.lastCapWarn or (os.clock() - state.lastCapWarn > 18) then
+			state.lastCapWarn = os.clock()
+			showToast("⚠️ Capacidad casi llena: Construye Ciudades ($500) para aumentar tu límite de tropas", Color3.fromRGB(255, 190, 50))
+		end
+	else
+		troopsCard.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+	goldCard.Text = string.format("💰 Oro: %s (+%d/s)", troopText(meData.gold or 0), math.floor((meData.goldRate or 0) + 0.5))
 end)
 
 -- FEED DE EVENTOS (estilo RoWorld): tarjetas a la izquierda; verde = logros, rojo = amenazas, morado = alianzas
