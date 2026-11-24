@@ -136,6 +136,13 @@ root.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
 root.BorderSizePixel = 0
 root.Parent = gui
 
+local function roundCorners(obj, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = obj
+	return c
+end
+
 -- Área de visualización del mapa (con soporte de Pan & Zoom)
 local mapContainer = Instance.new("Frame")
 mapContainer.Name = "MapContainer"
@@ -1055,6 +1062,8 @@ lobbyScreen.Active = true -- bloquea los clics hacia el mapa
 lobbyScreen.ZIndex = 60
 lobbyScreen.Parent = root
 
+local showLobby, updateLobbyStatus
+do
 local lobbyCard = Instance.new("Frame")
 lobbyCard.Name = "LobbyCard"
 lobbyCard.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1100,12 +1109,6 @@ local function lobbyLabel(text, pos, size, font, color, textSize, align)
 	l.ZIndex = 62
 	l.Parent = lobbyCard
 	return l
-end
-
-local function roundCorners(obj, radius)
-	local c = Instance.new("UICorner")
-	c.CornerRadius = UDim.new(0, radius)
-	c.Parent = obj
 end
 
 lobbyLabel(
@@ -1465,7 +1468,7 @@ end
 local MODE_NAMES = { COUNTRIES = "Países vs Países", CONTINENTS = "Continentes", FREE = "Libre" }
 local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
 
-local function updateLobbyStatus()
+function updateLobbyStatus()
 	local s = state.stats
 	if not s then
 		lobbyStatus.Text = "Conectando con el servidor..."
@@ -1490,7 +1493,7 @@ local function updateLobbyStatus()
 	end
 end
 
-local function showLobby(visible)
+function showLobby(visible)
 	lobbyScreen.Visible = visible
 	btnLobbyClose.Visible = visible and state.initialized
 	if visible then
@@ -1513,6 +1516,7 @@ end)
 btnLobbyClose.MouseButton1Click:Connect(function()
 	showLobby(false)
 end)
+end
 btnLobby.MouseButton1Click:Connect(function()
 	showLobby(not lobbyScreen.Visible)
 end)
@@ -4438,6 +4442,8 @@ WorldStats.OnClientEvent:Connect(function(stats)
 	end
 end)
 
+local updateAttackPill, updateAllyCards, setSpectator
+do
 -- Modo espectador: quien es eliminado por las tropas rivales pierde y solo puede observar la partida
 local spectatorBanner = Instance.new("TextLabel")
 spectatorBanner.Name = "SpectatorBanner"
@@ -4473,7 +4479,7 @@ attackPill.ZIndex = 24
 attackPill.Parent = root
 roundCorners(attackPill, 13)
 
-local function updateAttackPill(meData)
+function updateAttackPill(meData)
 	local best, bestTroops = nil, 0
 	for _, a in ipairs(meData.attacks or {}) do
 		if a.target and a.target ~= 0 and a.troops > bestTroops then
@@ -4532,7 +4538,7 @@ local allyLayout = Instance.new("UIListLayout")
 allyLayout.Padding = UDim.new(0, 6)
 allyLayout.Parent = allyCards
 
-local function updateAllyCards(meData)
+function updateAllyCards(meData)
 	local info = meData.ally
 	local requests = info and info.requests or {}
 	for _, c in ipairs(allyCards:GetChildren()) do
@@ -4588,13 +4594,14 @@ local function updateAllyCards(meData)
 	end
 end
 
-local function setSpectator(on)
+function setSpectator(on)
 	if spectatorBanner.Visible == on then
 		return
 	end
 	spectatorBanner.Visible = on
 	bottomHUD.Visible = not on
 	weaponBar.Visible = not on
+end
 end
 
 WorldMe.OnClientEvent:Connect(function(meData)

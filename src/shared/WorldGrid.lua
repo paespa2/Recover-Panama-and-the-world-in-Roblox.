@@ -1673,7 +1673,7 @@ function WorldGrid.Generate(planetId)
 					local mx = math.floor((x / W) * mw)
 					local bitIdx = my * mw + mx
 					local byteVal = buffer.readu8(maskBuf, bitIdx // 8)
-					local bit = bit.band(bit.rshift(byteVal, bitIdx % 8), 1)
+					local bit = bit32.band(bit32.rshift(byteVal, bitIdx % 8), 1)
 					if bit == 1 then
 						buffer.writeu8(land, y * W + x, 1)
 					end
