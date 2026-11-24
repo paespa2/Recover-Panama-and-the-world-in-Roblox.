@@ -1175,12 +1175,16 @@ local function setTilesVisible(visible)
 end
 
 local function initBlocks(w, h)
+	-- Otra carga ya está creando los bloques: se espera a que termine (luego bastará con reutilizarlos)
+	while state.blockBuilding do
+		task.wait()
+	end
 	mapImage.Visible = false
-	state.blockMode = true
 	state.useTiles = state.planet == "EARTH"
 	setTilesVisible(state.useTiles)
 	local bw, bh = w // BLOCK, h // BLOCK
 	if state.blocks and state.blockW == bw and state.blockH == bh then
+		state.blockMode = true
 		if state.blockLayer then
 			state.blockLayer.Visible = true
 		end
@@ -1189,6 +1193,7 @@ local function initBlocks(w, h)
 	if state.blockLayer then
 		state.blockLayer:Destroy()
 	end
+	state.blockBuilding = true
 
 	local layer = Instance.new("Frame")
 	layer.Name = "BlockLayer"
@@ -1196,9 +1201,14 @@ local function initBlocks(w, h)
 	layer.BackgroundTransparency = 1
 	layer.BorderSizePixel = 0
 	layer.ZIndex = -5 -- siempre por debajo de marcadores, efectos y cursor
+	layer.Parent = mapCanvas
 
+	-- Son ~15.000 rectángulos: se crean por tandas cediendo el turno, o el script agota su tiempo de ejecución
 	local blocks = table.create(bw * bh)
 	for by = 0, bh - 1 do
+		if by % 10 == 9 then
+			task.wait()
+		end
 		for bx = 0, bw - 1 do
 			local f = Instance.new("Frame")
 			f.BorderSizePixel = 0
@@ -1215,13 +1225,14 @@ local function initBlocks(w, h)
 			blocks[by * bw + bx + 1] = { frame = f, r = 14, g = 28, b = 52 }
 		end
 	end
-	layer.Parent = mapCanvas
 
 	state.blocks = blocks
 	state.blockLayer = layer
 	state.blockW = bw
 	state.blockH = bh
 	state.dirtyBlocks = {}
+	state.blockMode = true -- hasta aquí los cambios del mapa se ignoran: aún no hay bloques que pintar
+	state.blockBuilding = false
 	warn(
 		"[WorldClient] EditableImage no disponible: usando mapa por bloques de " .. BLOCK .. "x" .. BLOCK .. " celdas."
 	)
@@ -1462,6 +1473,7 @@ local function flushImage()
 			recolorBlock(bi)
 			state.dirtyBlocks[bi] = nil
 		end
+		state.detailDirty = true -- el nivel de detalle celda por celda se refresca con los cambios
 		return
 	end
 	if state.editableImage and state.pixelBuffer then
@@ -1530,10 +1542,22 @@ local function clearMarkers()
 	table.clear(markerLabels)
 end
 
--- Con zoom bajo solo se rotulan tú, los jugadores y los países más grandes; al acercar se ven todos
+-- Rótulos y puntos escalan con el zoom (rel = 1 es el mundo entero a pantalla).
+-- Con zoom bajo solo se rotulan tú, los jugadores y los países más grandes; al acercar se ven todos.
 local function applyLabelZoom()
+	local rel = state.zoom / (state.fit or state.zoom)
 	for _, m in ipairs(markerLabels) do
-		m.label.Visible = m.always or state.zoom >= 1.3
+		local ds = math.clamp(math.floor((if m.isMe then 12 else 7) * (0.75 + 0.3 * rel)), 5, 24)
+		m.dot.Size = UDim2.fromOffset(ds, ds)
+		local show = m.always or rel >= 1.8
+		m.label.Visible = show
+		if show then
+			local size = math.clamp(math.floor(7 + 3 * rel), 8, 17) + (if m.strong then 2 else 0)
+			local width = math.max(100, size * 14)
+			m.label.TextSize = size
+			m.label.Size = UDim2.fromOffset(width, size + 6)
+			m.label.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2)
+		end
 	end
 end
 
@@ -1636,7 +1660,13 @@ local function updateMarkers()
 			nameLbl.Parent = marker
 
 			table.insert(markerPool, marker)
-			table.insert(markerLabels, { label = nameLbl, always = isMe or isHuman or bigIds[n.id] == true })
+			table.insert(markerLabels, {
+				label = nameLbl,
+				dot = dot,
+				isMe = isMe,
+				strong = isMe or isHuman,
+				always = isMe or isHuman or bigIds[n.id] == true,
+			})
 		end
 	end
 	applyLabelZoom()
@@ -1743,6 +1773,8 @@ local function updateMapTransform()
 
 	mapCanvas.Size = UDim2.fromOffset(scaledW, scaledH)
 	mapCanvas.Position = UDim2.fromOffset(viewportSize.X / 2 + state.pan.X, viewportSize.Y / 2 + state.pan.Y)
+	state.fit = math.min(viewportSize.X / BASE_WIDTH, viewportSize.Y / BASE_HEIGHT) -- zoom que muestra el mundo entero
+	state.detailDirty = true
 	applyLabelZoom()
 end
 
@@ -1762,15 +1794,34 @@ local function clampPan()
 	state.pan = Vector2.new(math.clamp(state.pan.X, -maxX, maxX), math.clamp(state.pan.Y, -maxY, maxY))
 end
 
--- Zoom manteniendo fijo el punto del mapa que hay bajo el cursor
-local function zoomAt(screenPos, factor)
-	local newZoom = math.clamp(state.zoom * factor, 0.25, 8.0)
+-- Zoom suave: la rueda y las teclas fijan un objetivo y cada fotograma se acerca a él (ver más abajo)
+local MAX_ZOOM = 8.0
+local zoomTarget = state.zoom
+local zoomAnchor = Vector2.zero
+local requestZoom, fitToScreen, focusCell -- se definen tras los controles
+
+-- Zoom que muestra el mundo entero; el mínimo permitido es algo menor para dejar un margen
+local function fitZoom()
+	local vs = mapContainer.AbsoluteSize
+	return math.min(vs.X / BASE_WIDTH, vs.Y / BASE_HEIGHT)
+end
+
+-- Zoom inmediato manteniendo fijo el punto del mapa que hay bajo screenPos.
+-- El centro se calcula con el estado (no con AbsolutePosition, que se actualiza un fotograma tarde).
+local function applyZoom(screenPos, factor)
+	local newZoom = math.clamp(state.zoom * factor, fitZoom() * 0.85, MAX_ZOOM)
 	local f = newZoom / state.zoom
-	local center = mapCanvas.AbsolutePosition + mapCanvas.AbsoluteSize / 2
+	local center = mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2 + state.pan
 	state.pan = state.pan + (screenPos - center) * (1 - f)
 	state.zoom = newZoom
 	clampPan()
 	updateMapTransform()
+end
+
+-- Zoom inmediato (pellizco táctil): también fija el objetivo para que el suavizado no lo deshaga
+local function zoomAt(screenPos, factor)
+	applyZoom(screenPos, factor)
+	zoomTarget = state.zoom
 end
 
 mapContainer.InputBegan:Connect(function(input)
@@ -1823,7 +1874,7 @@ UserInputService.InputChanged:Connect(function(input)
 			updateMapTransform()
 		end
 	elseif t == Enum.UserInputType.MouseWheel then
-		zoomAt(UserInputService:GetMouseLocation(), if input.Position.Z > 0 then 1.15 else 0.87)
+		requestZoom(UserInputService:GetMouseLocation(), if input.Position.Z > 0 then 1.2 else 1 / 1.2)
 	end
 end)
 
@@ -1857,9 +1908,11 @@ RunService.RenderStepped:Connect(function(dt)
 		updateMapTransform()
 	end
 	if UserInputService:IsKeyDown(Enum.KeyCode.E) then
-		zoomAt(mapContainer.AbsoluteSize / 2, 1 + 1.5 * dt)
+		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 + 2.5 * dt)
 	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
-		zoomAt(mapContainer.AbsoluteSize / 2, 1 / (1 + 1.5 * dt))
+		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 / (1 + 2.5 * dt))
+	elseif UserInputService:IsKeyDown(Enum.KeyCode.H) then
+		fitToScreen()
 	end
 end)
 
@@ -1876,6 +1929,238 @@ RunService.RenderStepped:Connect(function()
 		cellCursor.Visible = true
 	elseif cell < 0 then
 		cellCursor.Visible = false
+	end
+end)
+
+-- ============================================================================
+-- ZOOM: suavizado, vista completa, botones y nivel de detalle celda por celda
+-- ============================================================================
+function requestZoom(screenPos, factor)
+	zoomTarget = math.clamp(zoomTarget * factor, fitZoom() * 0.85, MAX_ZOOM)
+	zoomAnchor = screenPos
+end
+
+-- Cada fotograma el zoom se acerca al objetivo (animación suave de acercar y alejar)
+RunService.RenderStepped:Connect(function(dt)
+	local diff = zoomTarget - state.zoom
+	if math.abs(diff) > 0.0004 then
+		applyZoom(zoomAnchor, (state.zoom + diff * math.min(1, dt * 14)) / state.zoom)
+	end
+end)
+
+-- Muestra el mundo entero ajustado a la pantalla
+function fitToScreen()
+	state.zoom = fitZoom()
+	zoomTarget = state.zoom
+	state.pan = Vector2.zero
+	updateMapTransform()
+end
+
+-- Centra la vista en una celda con el zoom indicado (sin animar)
+function focusCell(cell, zoom)
+	state.zoom = math.clamp(zoom or state.zoom, fitZoom() * 0.85, MAX_ZOOM)
+	zoomTarget = state.zoom
+	local normX = (cell % state.w + 0.5) / state.w - 0.5
+	local normY = (cell // state.w + 0.5) / state.h - 0.5
+	state.pan = Vector2.new(-normX * BASE_WIDTH * state.zoom, -normY * BASE_HEIGHT * state.zoom)
+	clampPan()
+	updateMapTransform()
+end
+
+-- Botones de zoom (útiles sobre todo en pantallas táctiles): acercar, alejar y ver todo el mundo
+local zoomBar = Instance.new("Frame")
+zoomBar.Name = "ZoomBar"
+zoomBar.AnchorPoint = Vector2.new(1, 0.5)
+zoomBar.Position = UDim2.new(1, -16, 0.56, 0)
+zoomBar.Size = UDim2.fromOffset(40, 132)
+zoomBar.BackgroundTransparency = 1
+zoomBar.ZIndex = 25
+zoomBar.Parent = root
+
+local zoomBarLayout = Instance.new("UIListLayout")
+zoomBarLayout.Padding = UDim.new(0, 6)
+zoomBarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+zoomBarLayout.Parent = zoomBar
+
+local function zoomButton(order, text, action)
+	local b = Instance.new("TextButton")
+	b.LayoutOrder = order
+	b.Size = UDim2.fromOffset(40, 40)
+	b.BackgroundColor3 = Color3.fromRGB(26, 40, 66)
+	b.BorderSizePixel = 0
+	b.Font = Enum.Font.GothamBlack
+	b.Text = text
+	b.TextColor3 = Color3.fromRGB(235, 242, 255)
+	b.TextSize = 20
+	b.ZIndex = 26
+	b.Parent = zoomBar
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = b
+	local s = Instance.new("UIStroke")
+	s.Color = Color3.fromRGB(60, 90, 140)
+	s.Thickness = 1.5
+	s.Parent = b
+	b.MouseButton1Click:Connect(action)
+end
+local function viewCenter()
+	return mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2
+end
+zoomButton(1, "+", function()
+	requestZoom(viewCenter(), 1.6)
+end)
+zoomButton(2, "−", function()
+	requestZoom(viewCenter(), 1 / 1.6)
+end)
+zoomButton(3, "⌂", function()
+	fitToScreen()
+end)
+
+-- ---- Detalle celda por celda: al acercar mucho, cada celda conquistada se pinta como su propio cuadro ----
+-- Solo se dibujan las celdas visibles. Cada celda usa siempre el mismo "hueco" de un reparto toroidal, así
+-- al desplazarse solo se reasignan los cuadros que entran por el borde (no toda la pantalla).
+local DETAIL_MIN_CELL_PX = 7 -- tamaño mínimo de celda en pantalla para activar el detalle
+local DETAIL_MAX_CELLS = 12000 -- tope de cuadros visibles a la vez (rendimiento)
+local detail = {
+	layer = nil,
+	frames = {},
+	slotCell = {},
+	slotOwner = {},
+	cols = 0,
+	rows = 0,
+	active = false,
+	last = 0,
+	flashing = {},
+	flashCount = 0,
+}
+
+local function setDetailActive(on)
+	if on and not detail.layer then
+		local l = Instance.new("Frame")
+		l.Name = "DetailLayer"
+		l.Size = UDim2.fromScale(1, 1)
+		l.BackgroundTransparency = 1
+		l.BorderSizePixel = 0
+		l.ZIndex = -4 -- sobre los bloques de color (-5) y bajo las fronteras (-3)
+		l.Parent = mapCanvas
+		detail.layer = l
+	end
+	detail.active = on
+	if detail.layer then
+		detail.layer.Visible = on
+	end
+	if state.blockLayer then
+		state.blockLayer.Visible = not on
+	end
+end
+
+local function refreshDetail()
+	if not (state.blockMode and state.useTiles and state.owner and state.w > 0) then
+		if detail.active then
+			setDetailActive(false)
+		end
+		return
+	end
+	local w, h = state.w, state.h
+	local cellW = BASE_WIDTH * state.zoom / w
+	local cellH = BASE_HEIGHT * state.zoom / h
+	local vs = mapContainer.AbsoluteSize
+	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
+	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
+	local x0 = math.max(0, math.floor(-left / cellW) - 1)
+	local x1 = math.min(w - 1, math.ceil((vs.X - left) / cellW) + 1)
+	local y0 = math.max(0, math.floor(-top / cellH) - 1)
+	local y1 = math.min(h - 1, math.ceil((vs.Y - top) / cellH) + 1)
+	local count = (x1 - x0 + 1) * (y1 - y0 + 1)
+	if cellW < DETAIL_MIN_CELL_PX or count <= 0 or count > DETAIL_MAX_CELLS then
+		if detail.active then
+			setDetailActive(false)
+		end
+		return
+	end
+	if not detail.active then
+		setDetailActive(true)
+	elseif state.blockLayer and state.blockLayer.Visible then
+		state.blockLayer.Visible = false -- initBlocks pudo volver a mostrarlo
+	end
+
+	-- Cuadrícula de huecos algo mayor que la ventana visible
+	local cols, rows = (x1 - x0 + 1) + 2, (y1 - y0 + 1) + 2
+	if cols ~= detail.cols or rows ~= detail.rows then
+		for _, f in pairs(detail.frames) do
+			f.Visible = false
+		end
+		table.clear(detail.slotCell)
+		table.clear(detail.slotOwner)
+		detail.cols, detail.rows = cols, rows
+	end
+
+	local owner = state.owner
+	local frames, slotCell, slotOwner = detail.frames, detail.slotCell, detail.slotOwner
+	for y = y0, y1 do
+		local rowBase = (y % rows) * cols + 1
+		for x = x0, x1 do
+			local cell = y * w + x
+			local slot = rowBase + (x % cols)
+			local o = buffer.readu8(owner, cell)
+			local prevCell, prevOwner = slotCell[slot], slotOwner[slot]
+			if prevCell ~= cell or prevOwner ~= o then
+				slotCell[slot], slotOwner[slot] = cell, o
+				local n = if o ~= 0 then state.rosterById[o] else nil
+				local f = frames[slot]
+				if not n then
+					if f then
+						f.Visible = false
+					end
+				else
+					if not f then
+						f = Instance.new("Frame")
+						f.BorderSizePixel = 0
+						f.Size = UDim2.fromScale(1 / w, 1 / h)
+						f.Parent = detail.layer
+						frames[slot] = f
+					end
+					f.Position = UDim2.fromScale(x / w, y / h)
+					-- Más opaco que los bloques: aquí cada celda es grande y el tinte debe distinguirse bien
+					local transparency = if o == state.myId then 0.25 elseif n.bot == false then 0.33 else 0.45
+					f.BackgroundColor3 = n.color
+					f.BackgroundTransparency = transparency
+					f.Visible = true
+					-- Misma celda que cambia de dueño = conquista: destello que se asienta
+					if state.animReady and prevCell == cell and detail.flashCount < 700 then
+						if not detail.flashing[f] then
+							detail.flashCount += 1
+						end
+						detail.flashing[f] = { t0 = os.clock(), color = n.color, transp = transparency }
+						f.BackgroundColor3 = n.color:Lerp(Color3.new(1, 1, 1), 0.65)
+						f.BackgroundTransparency = 0.05
+					end
+				end
+			end
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	-- Destellos de conquista en las celdas del detalle
+	local now = os.clock()
+	for f, d in pairs(detail.flashing) do
+		local a = (now - d.t0) / FLASH_TIME
+		if a >= 1 or not f.Parent then
+			f.BackgroundColor3 = d.color
+			f.BackgroundTransparency = d.transp
+			detail.flashing[f] = nil
+			detail.flashCount -= 1
+		else
+			f.BackgroundColor3 = d.color:Lerp(Color3.new(1, 1, 1), 0.65 * (1 - a))
+			f.BackgroundTransparency = 0.05 + (d.transp - 0.05) * a
+		end
+	end
+	-- Redibujado del detalle limitado a ~8 veces por segundo
+	if state.detailDirty and now - detail.last > 0.12 then
+		detail.last = now
+		state.detailDirty = false
+		refreshDetail()
 	end
 end)
 
@@ -1980,7 +2265,22 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 	local mp = Vector2.new(mouse.X, mouse.Y)
-	local cell = screenToCell(mp)
+	-- Sin tarjeta mientras arrastras el mapa o si el ratón está sobre un panel (no debe tapar los botones)
+	local blocked = drag.active and drag.moved
+	if not blocked then
+		-- countryPanel se declara más abajo en el archivo: se busca por nombre
+		local panel = root:FindFirstChild("CountryPanel")
+		for _, ui in ipairs({ bottomHUD, leaderFrame, zoomBar, panel or topBar, topBar }) do
+			if ui.Visible then
+				local p, s = ui.AbsolutePosition, ui.AbsoluteSize
+				if mp.X >= p.X and mp.X <= p.X + s.X and mp.Y >= p.Y and mp.Y <= p.Y + s.Y then
+					blocked = true
+					break
+				end
+			end
+		end
+	end
+	local cell = if blocked then -1 else screenToCell(mp)
 	if cell < 0 or cell >= state.w * state.h then
 		hoverTip.Visible = false
 		return
@@ -2429,7 +2729,7 @@ WorldInit.OnClientEvent:Connect(function(data)
 	state.baseBuffer = WorldGrid.BuildBase(state.planet, state.land)
 	fullRedraw()
 	updateMarkers()
-	updateMapTransform()
+	fitToScreen() -- vista inicial: el mundo entero ajustado a la pantalla
 
 	-- Modo Países vs Países: lista de selección por continente
 	state.mode = data.mode or "FREE"
@@ -2446,6 +2746,17 @@ WorldInit.OnClientEvent:Connect(function(data)
 end)
 
 WorldDiff.OnClientEvent:Connect(function(diffBuf)
+	-- Mientras se crean los bloques solo se anotan los dueños (el dibujado completo llega después)
+	if state.owner and state.blockBuilding then
+		for i = 0, math.floor(buffer.len(diffBuf) / 4) - 1 do
+			local packed = buffer.readu32(diffBuf, i * 4)
+			local cell = math.floor(packed / 256)
+			if cell < (state.w * state.h) then
+				buffer.writeu8(state.owner, cell, packed % 256)
+			end
+		end
+		return
+	end
 	if not state.owner or (not state.editableImage and not state.blockMode) then
 		return
 	end
@@ -2573,13 +2884,26 @@ WorldStats.OnClientEvent:Connect(function(stats)
 				pctLbl.TextSize = 10
 				pctLbl.TextXAlignment = Enum.TextXAlignment.Right
 				pctLbl.Parent = row
+
+				-- El ScreenGui usa capas globales: la fila y sus textos deben quedar por encima de los rótulos del mapa
+				row.ZIndex = 22
+				for _, d in ipairs(row:GetDescendants()) do
+					if d:IsA("GuiObject") then
+						d.ZIndex = 23
+					end
+				end
 			end
 		end
 	end
 end)
 
 WorldMe.OnClientEvent:Connect(function(meData)
+	local wasAlive = state.me and state.me.alive
 	state.me = meData
+	-- Al conseguir tu país (o aparecer), la cámara se acerca a tu capital
+	if meData.alive and not wasAlive and meData.capital and meData.capital >= 0 then
+		focusCell(meData.capital, fitZoom() * 2.4)
+	end
 	if meData.capital and meData.capital >= 0 then
 		local myRoster = state.rosterById[state.myId]
 		if myRoster and myRoster.capital ~= meData.capital then
