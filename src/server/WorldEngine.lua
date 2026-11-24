@@ -32,6 +32,37 @@ local PORT_RANGE = 140
 
 Engine.COSTS = { City = 500, Port = 400, Post = 350, Silo = 1200 }
 Engine.NUKE_COST = NUKE_COST
+local NUKE_COOLDOWN = 45
+
+-- Armas bélicas (poderes que se apuntan con un clic). Todas cuestan oro y tienen enfriamiento propio.
+--   radius    radio del área en celdas        destroy   fracción de celdas enemigas que pierden dueño
+--   troopHit  fracción de tropas que pierden las naciones alcanzadas (además de las celdas perdidas)
+--   impacts   número de impactos (el meteorito cae en racimo)        buildings   destruye todos los edificios del área
+Engine.NUKE_RADIUS = NUKE_RADIUS
+Engine.NUKE_COOLDOWN = NUKE_COOLDOWN
+Engine.WEAPONS = {
+	BOMB = { name = "Bomba", icon = "💣", cost = 250, radius = 5, cooldown = 6, destroy = 1.0 },
+	ARTILLERY = {
+		name = "Artillería",
+		icon = "🎯",
+		cost = 300,
+		radius = 3,
+		cooldown = 8,
+		destroy = 0.4,
+		troopHit = 0.3,
+	},
+	METEOR = { name = "Meteorito", icon = "☄️", cost = 650, radius = 7, cooldown = 25, destroy = 1.0, impacts = 3 },
+	QUAKE = {
+		name = "Terremoto",
+		icon = "🌋",
+		cost = 550,
+		radius = 13,
+		cooldown = 30,
+		destroy = 0.35,
+		buildings = true,
+	},
+}
+Engine.WEAPON_ORDER = { "BOMB", "ARTILLERY", "METEOR", "QUAKE" }
 
 local DIFFICULTY = {
 	EASY = { think = 5.0, maxAttacks = 1, minRatio = 0.2, maxRatio = 0.35, growth = 0.8, edge = 1.4 },
@@ -173,6 +204,8 @@ function Engine.new(planetId, botCount, difficulty, mode)
 	self.changes = {}
 	self.buildingAt = {}
 	self.events = {}
+	self.fxEvents = {} -- efectos visuales de armas para los clientes (los envía WorldServer)
+	self.scheduled = {} -- acciones diferidas (impactos de desastres, p. ej.): { at = instante, fn = función }
 	self.difficultyName = if DIFFICULTY[difficulty] then difficulty else "NORMAL"
 	self.diff = DIFFICULTY[self.difficultyName]
 	self.time = 0
@@ -184,11 +217,16 @@ function Engine.new(planetId, botCount, difficulty, mode)
 	self.nextId = 1
 	self.humanCount = 0
 	self.rng = Random.new()
+	self.disasterTimer = 55 + self.rng:NextNumber() * 30 -- primer desastre 55-85 s después de empezar la guerra
 	self._nb = {}
 
 	self.mode = "FREE"
-	if mode == "COUNTRIES" and self.planetId == "EARTH" and CountryData then
+	self.teamMode = false
+	-- Estilo de propagación: CELL (célula redonda), ORGANIC (frontera irregular), TENDRIL (tentáculos)
+	self.propagation = "CELL"
+	if (mode == "COUNTRIES" or mode == "CONTINENTS") and self.planetId == "EARTH" and CountryData then
 		self.mode = "COUNTRIES"
+		self.teamMode = (mode == "CONTINENTS") -- cada continente es un equipo: los aliados no se atacan
 		self:initCountries()
 		return self
 	end
@@ -233,6 +271,11 @@ function Engine:addNation(name, color, isBot, player)
 		thinkTimer = self.rng:NextNumber() * 4,
 		persona = if isBot then BotAI.assign(self.rng, name) else nil,
 		lastNuke = -999,
+		weaponReady = {}, -- [arma] = instante (self.time) en que vuelve a estar lista
+		-- Autojuego de los jugadores: al empezar la guerra su nación se expande sola (se puede apagar en el HUD)
+		autoMode = if isBot then nil else "EXPAND",
+		autoRatio = 0.4,
+		autoTimer = 0,
 	}
 	self.nations[id] = n
 	table.insert(self.list, n)
@@ -496,19 +539,76 @@ function Engine:transferCountry(c, n)
 	n.attacks = {}
 	n.spawned = true
 	n.alive = n.cells > 0
+	n.claimedFrom = c -- para poder devolver el país si el jugador cambia de elección durante la aparición
 	n.name = string.format("%s (%s)", c.name, n.name)
 	c.capital = nil
 end
 
-function Engine:claimCountry(n, cell)
-	if n.alive then
-		return false, "Ya estás en el mapa"
+-- Devuelve a la IA el país que el jugador había tomado (cambio de elección en la fase de aparición)
+function Engine:releaseCountry(n)
+	local c = n.claimedFrom
+	if not c then
+		return
 	end
+	local w = self.w
+	local x0, x1 = n.bx0 or 0, n.bx1 or (w - 1)
+	local y0, y1 = n.by0 or 0, n.by1 or (self.h - 1)
+	for y = y0, y1 do
+		for x = x0, x1 do
+			local i = y * w + x
+			if buffer.readu8(self.owner, i) == n.id then
+				self:setOwner(i, c.id)
+			end
+		end
+	end
+	c.alive = c.cells > 0
+	c.capital = n.capital
+	c.attacks = {}
+	n.claimedFrom = nil
+	n.alive = false
+	n.spawned = false
+	n.countryId, n.continent, n.iso, n.pop = nil, nil, nil, nil
+	n.capital = nil
+	n.troops = 0
+	n.attacks = {}
+	n.name = n.playerName or n.name
+end
+
+-- Quita el territorio de un jugador (cambio de ubicación en la fase de aparición)
+function Engine:abandonTerritory(n)
+	local w = self.w
+	local x0, x1 = n.bx0 or 0, n.bx1 or (w - 1)
+	local y0, y1 = n.by0 or 0, n.by1 or (self.h - 1)
+	for y = y0, y1 do
+		for x = x0, x1 do
+			local i = y * w + x
+			if buffer.readu8(self.owner, i) == n.id then
+				self:setOwner(i, 0)
+			end
+		end
+	end
+	n.alive = false
+	n.spawned = false
+	n.capital = nil
+	n.troops = 0
+	n.attacks = {}
+end
+
+function Engine:claimCountry(n, cell)
 	if self.phase == "ENDED" then
 		return false, "La partida terminó"
 	end
 	local id = buffer.readu8(self.owner, cell)
 	local c = if id ~= 0 then self.nations[id] else nil
+	if n.alive then
+		-- Durante la aparición se puede cambiar de país; después de empezar la guerra, no
+		if self.phase ~= "SPAWN" or not n.claimedFrom then
+			return false, "Ya estás en el mapa"
+		end
+		if id == n.id then
+			return false, "Ya gobiernas ese país"
+		end
+	end
 	if not c or not c.countryId or not c.alive then
 		return false, "Elige un país: haz clic sobre su territorio"
 	end
@@ -517,6 +617,9 @@ function Engine:claimCountry(n, cell)
 	end
 	if self.phase ~= "SPAWN" and c.cells > 800 then
 		return false, "La guerra ya empezó: elige un país pequeño (menos de 800 celdas)"
+	end
+	if n.alive then
+		self:releaseCountry(n) -- todo validado: se devuelve el país anterior antes de tomar el nuevo
 	end
 	local cname = c.name
 	self:transferCountry(c, n)
@@ -550,17 +653,29 @@ function Engine:setSpawn(n, cell)
 	if self.mode == "COUNTRIES" then
 		return self:claimCountry(n, cell)
 	end
-	if n.alive then
-		return false, "Ya estás en el mapa"
-	end
 	if self.phase == "ENDED" then
 		return false, "La partida terminó"
 	end
+	-- Durante la aparición se puede cambiar de ubicación; si el nuevo punto no vale, se recupera el anterior
+	local oldCapital = nil
+	if n.alive then
+		if self.phase ~= "SPAWN" then
+			return false, "Ya estás en el mapa"
+		end
+		oldCapital = n.capital
+		self:abandonTerritory(n)
+	end
+	local function fail(msg)
+		if oldCapital then
+			self:spawnNation(n, oldCapital)
+		end
+		return false, msg
+	end
 	if buffer.readu8(self.land, cell) ~= 1 then
-		return false, "Debes elegir tierra firme"
+		return fail("Debes elegir tierra firme")
 	end
 	if not self:isClear(cell, 3) then
-		return false, "Zona ocupada, elige otro lugar"
+		return fail("Zona ocupada, elige otro lugar")
 	end
 	self:spawnNation(n, cell)
 	self:notify(n.userId, "⭐ ¡Has aparecido! Haz clic en territorio vecino para expandirte")
@@ -621,6 +736,9 @@ function Engine:launchAttack(n, targetId, ratio, targetCell)
 		if not tn or not tn.alive then
 			return false, "Objetivo inválido"
 		end
+		if self:isAlly(n, tn) then
+			return false, "No puedes atacar a un aliado de tu continente"
+		end
 	end
 	local troops = math.floor(n.troops * math.clamp(ratio, 0.05, 1))
 	if troops < 50 then
@@ -678,6 +796,7 @@ function Engine:processAttack(n, atk)
 	local maxCells = math.clamp(math.floor(math.sqrt(atk.troops) * 1.6) + math.floor(math.sqrt(n.cells) * 0.4), 8, 120)
 	local w = self.w
 	local tgtCell = atk.targetCell
+	local deferred = {}
 
 	for _ = 1, maxCells do
 		local qn = #queue
@@ -705,11 +824,53 @@ function Engine:processAttack(n, atk)
 			end
 		else
 			k = self.rng:NextInteger(1, qn)
+			local style = self.propagation
+			local cap = n.capital
+			if cap and style ~= "ORGANIC" and qn > 1 then
+				-- CELL: crece como una célula/bacteria (blob redondo desde el núcleo).
+				-- TENDRIL: lo contrario, emite tentáculos hacia fuera.
+				local cx0, cy0 = cap % w, cap // w
+				local best = nil
+				local samples = if style == "CELL" then 6 else 3
+				for _s = 1, samples do
+					local idx = if _s == 1 then k else self.rng:NextInteger(1, qn)
+					local c = queue[idx]
+					local dx = math.abs(c % w - cx0)
+					dx = math.min(dx, w - dx)
+					local dy = c // w - cy0
+					local d = dx * dx + dy * dy
+					if style == "TENDRIL" then
+						d = -d
+					end
+					if not best or d < best then
+						best = d
+						k = idx
+					end
+				end
+			end
 		end
 
 		local cell = queue[k]
 		queue[k] = queue[qn]
 		queue[qn] = nil
+		-- El orden de la cola casi no cambia la forma (la frontera se consume por oleadas), así que la forma la da
+		-- una probabilidad de aceptación: ORGANIC = borde irregular; TENDRIL = lóbulos tipo ameba (pseudópodos)
+		local style = self.propagation
+		local capCell = n.capital
+		if style ~= "CELL" and not tgtCell and capCell then
+			local accept = 1
+			if style == "ORGANIC" then
+				accept = 0.55
+			else
+				local ang = math.atan2(cell // w - capCell // w, cell % w - capCell % w)
+				local lobe = (math.sin(ang * 4 + n.id) + 1) * 0.5 -- 0..1 con 4 lóbulos
+				accept = 0.12 + 0.88 * lobe * lobe
+			end
+			if self.rng:NextNumber() > accept then
+				deferred[#deferred + 1] = cell -- se reintenta en el siguiente tick (no dentro de este)
+				continue
+			end
+		end
 		if buffer.readu8(owner, cell) == target then
 			local cnt = self:neighbors(cell, nb)
 			local adjacent = false
@@ -761,6 +922,9 @@ function Engine:processAttack(n, atk)
 			end
 		end
 	end
+	for _, c in ipairs(deferred) do
+		queue[#queue + 1] = c
+	end
 	return false
 end
 
@@ -782,6 +946,16 @@ function Engine:retreat(n)
 	end
 end
 
+-- Modo equipos: dos naciones del mismo continente son aliadas y no pueden atacarse
+function Engine:isAlly(a, b)
+	return self.teamMode == true
+		and a ~= nil
+		and b ~= nil
+		and a ~= b
+		and a.continent ~= nil
+		and a.continent == b.continent
+end
+
 -- Desembarco anfibio: toma un bloque 3x3 de tierra
 function Engine:landing(n, cell, cost)
 	if n.troops < cost then
@@ -795,8 +969,9 @@ function Engine:landing(n, cell, cost)
 			local y = cy + dy
 			if y >= 0 and y < h then
 				local j = y * w + ((cx + dx) % w)
-				if buffer.readu8(self.land, j) == 1 and buffer.readu8(self.owner, j) ~= n.id then
-					local old = buffer.readu8(self.owner, j)
+				local cur = buffer.readu8(self.owner, j)
+				if buffer.readu8(self.land, j) == 1 and cur ~= n.id and not self:isAlly(n, self.nations[cur]) then
+					local old = cur
 					if old ~= 0 then
 						local on = self.nations[old]
 						on.attackedBy[n.id] = self.time
@@ -900,7 +1075,13 @@ function Engine:nuke(n, cell)
 	if n.gold < NUKE_COST then
 		return false, string.format("Necesitas 💰%d de oro", NUKE_COST)
 	end
+	local waitLeft = (n.weaponReady.NUKE or 0) - self.time
+	if waitLeft > 0 then
+		return false, string.format("El misil nuclear se recarga (%ds)", math.ceil(waitLeft))
+	end
 	n.gold -= NUKE_COST
+	n.weaponReady.NUKE = self.time + NUKE_COOLDOWN
+	self:fx("NUKE", cell, NUKE_RADIUS)
 	local w, h = self.w, self.h
 	local cx, cy = cell % w, cell // w
 	local victims = {}
@@ -911,7 +1092,12 @@ function Engine:nuke(n, cell)
 				if y >= 0 and y < h then
 					local j = y * w + ((cx + dx) % w)
 					local o = buffer.readu8(self.owner, j)
-					if buffer.readu8(self.land, j) == 1 and o ~= 0 and o ~= n.id then
+					if
+						buffer.readu8(self.land, j) == 1
+						and o ~= 0
+						and o ~= n.id
+						and not self:isAlly(n, self.nations[o])
+					then
 						victims[o] = (victims[o] or 0) + 1
 						self:setOwner(j, 0)
 					end
@@ -928,6 +1114,244 @@ function Engine:nuke(n, cell)
 		end
 	end
 	self:notify(nil, string.format("☢️ %s lanzó un misil nuclear", n.name))
+	return true
+end
+
+-- ============================================================================
+-- DESASTRES NATURALES: cada mundo tiene los suyos. Se avisa 5 s antes (anillo rojo y mensaje) y luego golpean.
+-- ============================================================================
+Engine.DISASTERS_ENABLED = true
+Engine.DISASTER_INFO = {
+	METEOR_SHOWER = { icon = "☄️", name = "lluvia de meteoritos", radius = 14 },
+	QUAKE = { icon = "🌋", name = "terremoto", radius = 12 },
+	VOLCANO = { icon = "🔥", name = "erupción volcánica", radius = 6 },
+	TORNADO = { icon = "🌪️", name = "tornado", radius = 10 },
+	SANDSTORM = { icon = "🏜️", name = "tormenta de arena", radius = 20 },
+}
+Engine.PLANET_DISASTERS = {
+	EARTH = { "QUAKE", "TORNADO", "METEOR_SHOWER" },
+	PANGEA = { "VOLCANO", "METEOR_SHOWER", "QUAKE" },
+	MARS = { "SANDSTORM", "METEOR_SHOWER" },
+	MOON = { "METEOR_SHOWER" },
+	VENUS = { "VOLCANO", "SANDSTORM" },
+	ANDROMEDA = { "METEOR_SHOWER", "QUAKE" },
+}
+
+function Engine:schedule(delay, fn)
+	table.insert(self.scheduled, { at = self.time + delay, fn = fn })
+end
+
+-- Las naciones que pierden celdas pierden también tropas (proporcional) y los jugadores reciben un aviso
+function Engine:disasterVictims(victims, label)
+	for id, lost in pairs(victims) do
+		local tn = self.nations[id]
+		if tn and lost > 0 then
+			tn.troops *= math.max(0.5, 1 - lost / math.max(1, tn.cells + lost))
+			if tn.userId then
+				self:notify(tn.userId, label .. " destruyó parte de tu territorio")
+			end
+		end
+	end
+end
+
+function Engine:startDisaster()
+	local list = Engine.PLANET_DISASTERS[self.planetId] or Engine.PLANET_DISASTERS.EARTH
+	local kind = list[self.rng:NextInteger(1, #list)]
+	local info = Engine.DISASTER_INFO[kind]
+	-- Objetivo: tierra habitada, para que el desastre importe
+	local cell = nil
+	for _ = 1, 40 do
+		local c = self.rng:NextInteger(0, self.size - 1)
+		if buffer.readu8(self.land, c) == 1 and buffer.readu8(self.owner, c) ~= 0 then
+			cell = c
+			break
+		end
+	end
+	if not cell then
+		return
+	end
+	local owner = self.nations[buffer.readu8(self.owner, cell)]
+	local where = if owner then " cerca de " .. owner.name else ""
+	self:notify(nil, string.format("⚠️ ¡Alerta! %s %s%s en 5 s", info.icon, info.name, where))
+	self:fx("WARN", cell, info.radius)
+	self:schedule(5, function()
+		self:runDisaster(kind, cell)
+	end)
+end
+
+function Engine:runDisaster(kind, cell)
+	local info = Engine.DISASTER_INFO[kind]
+	local nature = { id = 0 } -- la naturaleza no es una nación: nada es "suyo" y todo puede ser alcanzado
+	local w, h = self.w, self.h
+	local cx, cy = cell % w, cell // w
+	local label = info.icon .. " " .. info.name
+
+	if kind == "METEOR_SHOWER" then
+		for k = 1, 5 do
+			self:schedule((k - 1) * 0.5, function()
+				local ix = (cx + self.rng:NextInteger(-14, 14)) % w
+				local iy = math.clamp(cy + self.rng:NextInteger(-10, 10), 0, h - 1)
+				local v = {}
+				self:blast(nature, ix, iy, { radius = 4, destroy = 1.0 }, v)
+				self:fx("METEOR", iy * w + ix, 4)
+				self:disasterVictims(v, "☄️ Un meteorito")
+			end)
+		end
+	elseif kind == "QUAKE" then
+		local v = {}
+		self:blast(nature, cx, cy, { radius = 12, destroy = 0.3, buildings = true }, v)
+		self:fx("QUAKE", cell, 12)
+		self:disasterVictims(v, label)
+	elseif kind == "VOLCANO" then
+		local v = {}
+		self:blast(nature, cx, cy, { radius = 6, destroy = 1.0, buildings = true }, v)
+		self:fx("VOLCANO", cell, 6)
+		self:disasterVictims(v, label)
+	elseif kind == "TORNADO" then
+		-- El tornado recorre una línea: cada paso es un impacto pequeño y la animación lo sigue
+		local dx, dy = self.rng:NextInteger(-3, 3), self.rng:NextInteger(-2, 2)
+		if dx == 0 and dy == 0 then
+			dx = 3
+		end
+		for k = 0, 7 do
+			self:schedule(k * 0.45, function()
+				local ix = (cx + dx * k) % w
+				local iy = math.clamp(cy + dy * k, 0, h - 1)
+				local v = {}
+				self:blast(nature, ix, iy, { radius = 3, destroy = 0.6, buildings = true }, v)
+				self:fx("TORNADO", iy * w + ix, 3)
+				self:disasterVictims(v, label)
+			end)
+		end
+	elseif kind == "SANDSTORM" then
+		-- No quita territorio: las naciones dentro del área pierden el 12 % de sus tropas
+		local r = info.radius
+		local hit = {}
+		for dy = -r, r, 2 do
+			local y = cy + dy
+			if y >= 0 and y < h then
+				for dx = -r, r, 2 do
+					if dx * dx + dy * dy <= r * r then
+						local o = buffer.readu8(self.owner, y * w + ((cx + dx) % w))
+						if o ~= 0 then
+							hit[o] = true
+						end
+					end
+				end
+			end
+		end
+		for id in pairs(hit) do
+			local tn = self.nations[id]
+			if tn and tn.alive then
+				tn.troops *= 0.88
+				if tn.userId then
+					self:notify(tn.userId, label .. " ha mermado tus tropas")
+				end
+			end
+		end
+		self:fx("SANDSTORM", cell, r)
+	end
+end
+
+-- Efecto visual de un arma (lo recogen los clientes a través de WorldFx)
+function Engine:fx(kind, cell, radius)
+	table.insert(self.fxEvents, { kind = kind, cell = cell, r = radius })
+end
+
+-- Un impacto: las celdas enemigas del círculo pierden dueño (según def.destroy). Acumula las bajas en victims.
+function Engine:blast(n, cx, cy, def, victims)
+	local w, h = self.w, self.h
+	local r = def.radius
+	for dy = -r, r do
+		local y = cy + dy
+		if y >= 0 and y < h then
+			for dx = -r, r do
+				if dx * dx + dy * dy <= r * r then
+					local j = y * w + ((cx + dx) % w)
+					local o = buffer.readu8(self.owner, j)
+					if
+						buffer.readu8(self.land, j) == 1
+						and o ~= 0
+						and o ~= n.id
+						and not self:isAlly(n, self.nations[o])
+					then
+						victims[o] = victims[o] or 0
+						if def.destroy >= 1 or self.rng:NextNumber() < def.destroy then
+							victims[o] += 1
+							self:setOwner(j, 0)
+						end
+					end
+				end
+			end
+		end
+	end
+	if def.buildings then
+		local doomed = {}
+		for cell, b in pairs(self.buildingAt) do
+			local bx, by = cell % w, cell // w
+			local dx = math.abs(bx - cx)
+			dx = math.min(dx, w - dx)
+			if b.owner ~= n.id and dx * dx + (by - cy) * (by - cy) <= r * r then
+				doomed[#doomed + 1] = b
+			end
+		end
+		for _, b in ipairs(doomed) do
+			self:removeBuilding(b)
+		end
+	end
+end
+
+-- Lanza un arma de Engine.WEAPONS sobre una celda. Devuelve true, o false y el motivo.
+function Engine:weapon(n, kind, cell)
+	local def = Engine.WEAPONS[kind]
+	if not def then
+		return false, "Arma inválida"
+	end
+	if not n.alive then
+		return false, "No estás en el mapa"
+	end
+	if self.phase ~= "BATTLE" and self.phase ~= "RUNNING" then
+		return false, "Las armas se usan durante la guerra"
+	end
+	if buffer.readu8(self.land, cell) ~= 1 then
+		return false, "Apunta a tierra firme"
+	end
+	local waitLeft = (n.weaponReady[kind] or 0) - self.time
+	if waitLeft > 0 then
+		return false, string.format("%s se recarga (%ds)", def.name, math.ceil(waitLeft))
+	end
+	if n.gold < def.cost then
+		return false, string.format("Necesitas 💰%d de oro", def.cost)
+	end
+	n.gold -= def.cost
+	n.weaponReady[kind] = self.time + def.cooldown
+
+	local w, h = self.w, self.h
+	local cx, cy = cell % w, cell // w
+	local victims = {}
+	for k = 1, def.impacts or 1 do
+		local ix, iy = cx, cy
+		if k > 1 then -- los impactos extra del racimo caen cerca del objetivo
+			ix = (cx + self.rng:NextInteger(-8, 8)) % w
+			iy = math.clamp(cy + self.rng:NextInteger(-8, 8), 0, h - 1)
+		end
+		self:blast(n, ix, iy, def, victims)
+		self:fx(kind, iy * w + ix, def.radius)
+	end
+
+	for id, lost in pairs(victims) do
+		local tn = self.nations[id]
+		if lost > 0 then
+			tn.troops *= math.max(0.4, 1 - lost / math.max(1, tn.cells + lost))
+		end
+		if def.troopHit then
+			tn.troops *= 1 - def.troopHit
+		end
+		tn.attackedBy[n.id] = self.time
+		if tn.userId then
+			self:notify(tn.userId, string.format("%s ¡%s te atacó con %s!", def.icon, n.name, def.name))
+		end
+	end
 	return true
 end
 
@@ -975,8 +1399,13 @@ function Engine:economyStep()
 				local interest = n.troops * 0.038 * math.max(0, 1 - (n.troops / maxT))
 				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25) * mult
 				local g = (baseGrowth + interest) * math.max(0.1, 1 - (n.troops / (maxT * 1.05)))
+				local troopsBefore = n.troops
 				n.troops = math.min(maxT, n.troops + g)
-				n.gold += 2.0 + n.cells * 0.08 + n.cities * 5
+				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5
+				n.gold += goldGain
+				-- Ritmos reales por segundo (el HUD los muestra tal cual; antes usaba una fórmula inventada)
+				n.troopRate = n.troops - troopsBefore
+				n.goldRate = goldGain
 
 				-- IA de DEFENSA: contraataca a quien te esté atacando
 				if n.defenseAI and #n.attacks < 3 then
@@ -1004,7 +1433,46 @@ function Engine:economyStep()
 	end
 end
 
+-- Celdas y humanos por continente (solo modo equipos)
+function Engine:teamCells()
+	local byTeam = {}
+	for _, n in ipairs(self.list) do
+		if n.continent then
+			local t = byTeam[n.continent]
+			if not t then
+				t = { cells = 0, humans = 0 }
+				byTeam[n.continent] = t
+			end
+			t.cells += n.cells
+			if not n.isBot then
+				t.humans += 1
+			end
+		end
+	end
+	return byTeam
+end
+
+local TEAM_WIN_RATIO = 0.55
+
 function Engine:checkWin()
+	if self.teamMode then
+		for cont, t in pairs(self:teamCells()) do
+			if t.cells >= self.landCount * TEAM_WIN_RATIO then
+				self.phase = "ENDED"
+				self.winnerTeam = cont
+				self:notify(
+					nil,
+					string.format(
+						"🏆 ¡El equipo del continente %d conquistó el %d%% del mundo!",
+						cont,
+						math.floor(t.cells / self.landCount * 100)
+					)
+				)
+				return
+			end
+		end
+		return
+	end
 	for _, n in ipairs(self.list) do
 		if n.alive and n.cells >= self.landCount * WIN_RATIO then
 			self.phase = "ENDED"
@@ -1062,6 +1530,35 @@ function Engine:tick(dt)
 	end
 	self.thinkCursor = cursor
 
+	-- Autojuego de los jugadores humanos (solo decide ataques; cada ~1,2 s)
+	for _, n in ipairs(self.list) do
+		if n.alive and not n.isBot and n.autoMode and n.autoMode ~= "OFF" then
+			n.autoTimer -= dt
+			if n.autoTimer <= 0 then
+				n.autoTimer = 1.2
+				BotAI.autoplay(self, n, n.autoMode, n.autoRatio)
+			end
+		end
+	end
+
+	-- Desastres naturales (cada 50-100 s en la fase de guerra) y acciones programadas
+	if Engine.DISASTERS_ENABLED and (self.phase == "BATTLE" or self.phase == "RUNNING") then
+		self.disasterTimer -= dt
+		if self.disasterTimer <= 0 then
+			self.disasterTimer = 50 + self.rng:NextNumber() * 50
+			self:startDisaster()
+		end
+	end
+	local sched = self.scheduled
+	local si = 1
+	while si <= #sched do
+		if self.time >= sched[si].at then
+			table.remove(sched, si).fn()
+		else
+			si += 1
+		end
+	end
+
 	self.econAccum += dt
 	if self.econAccum >= 1 then
 		self.econAccum -= 1
@@ -1095,23 +1592,28 @@ function Engine:snapshotOwner()
 	return snap
 end
 
+-- Datos de una nación para el cliente (también se envían sueltos cuando entra un jugador a mitad de partida)
+function Engine:rosterEntry(n)
+	local c = n.color
+	return {
+		id = n.id,
+		name = n.name,
+		r = math.floor(c.R * 255 + 0.5),
+		g = math.floor(c.G * 255 + 0.5),
+		b = math.floor(c.B * 255 + 0.5),
+		bot = n.isBot,
+		persona = n.persona,
+		countryId = n.countryId,
+		continent = n.continent,
+		capital = n.capital,
+		cells = n.cells,
+	}
+end
+
 function Engine:getRoster()
 	local roster = {}
 	for _, n in ipairs(self.list) do
-		local c = n.color
-		table.insert(roster, {
-			id = n.id,
-			name = n.name,
-			r = math.floor(c.R * 255 + 0.5),
-			g = math.floor(c.G * 255 + 0.5),
-			b = math.floor(c.B * 255 + 0.5),
-			bot = n.isBot,
-			persona = n.persona,
-			countryId = n.countryId,
-			continent = n.continent,
-			capital = n.capital,
-			cells = n.cells,
-		})
+		table.insert(roster, self:rosterEntry(n))
 	end
 	return roster
 end
@@ -1151,10 +1653,43 @@ function Engine:getStats()
 			end
 		end
 	end
+	-- Ubicación de cada jugador humano (para marcar dónde se colocan los amigos durante la aparición)
+	local players = {}
+	for _, n in ipairs(self.list) do
+		if not n.isBot and n.playerName then
+			table.insert(players, { nid = n.id, name = n.playerName, capital = n.capital, alive = n.alive })
+		end
+	end
+	-- Modo equipos: clasificación por continente
+	local teams = nil
+	if self.teamMode then
+		local byTeam = self:teamCells()
+		teams = {}
+		for cont, t in pairs(byTeam) do
+			table.insert(teams, {
+				id = cont,
+				cells = t.cells,
+				pct = if self.landCount > 0 then t.cells / self.landCount * 100 else 0,
+				humans = t.humans,
+			})
+		end
+		table.sort(teams, function(a, b)
+			return a.cells > b.cells
+		end)
+	end
+	for _, p in ipairs(players) do
+		local pn = self.nations[p.nid]
+		p.team = pn and pn.continent
+	end
 	return {
 		mode = self.mode,
+		teamMode = self.teamMode,
+		teams = teams,
+		winnerTeam = self.winnerTeam,
 		taken = taken,
+		humans = players, -- no se llama "players": WorldServer ya usa ese campo para el número de jugadores del servidor
 		phase = self.phase,
+		spawnTotal = SPAWN_SECONDS,
 		spawnTimer = math.max(0, math.ceil(self.spawnTimer)),
 		winner = self.winner,
 		landCount = self.landCount,
@@ -1172,11 +1707,24 @@ function Engine:getMe(n)
 	for _, b in ipairs(n.buildings) do
 		table.insert(buildings, { kind = b.kind, cell = b.cell })
 	end
+	-- Segundos que faltan para que cada arma vuelva a estar lista (solo las que se están recargando)
+	local weapons = {}
+	for kind, readyAt in pairs(n.weaponReady) do
+		local left = readyAt - self.time
+		if left > 0 then
+			weapons[kind] = left
+		end
+	end
 	return {
 		id = n.id,
+		weapons = weapons,
 		troops = math.floor(n.troops),
 		maxTroops = self:maxTroops(n),
 		gold = math.floor(n.gold),
+		troopRate = n.troopRate or 0,
+		goldRate = n.goldRate or 0,
+		autoMode = n.autoMode or "OFF",
+		cities = n.cities,
 		cells = n.cells,
 		alive = n.alive,
 		spawned = n.spawned,

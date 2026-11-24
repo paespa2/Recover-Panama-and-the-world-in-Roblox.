@@ -231,7 +231,7 @@ local function scan(engine, n, stride)
 					local j = nb[q]
 					if buffer.readu8(land, j) == 1 then
 						local o = buffer.readu8(owner, j)
-						if o ~= id then
+						if o ~= id and not engine:isAlly(n, engine.nations[o]) then
 							isBorder = true
 							counts[o] = (counts[o] or 0) + 1
 							local list = enemyCells[o]
@@ -376,6 +376,51 @@ local function tryNuke(engine, n, info, p, leaderId, leaderShare)
 end
 
 -- ============================================================================
+-- ARMAS BÉLICAS (además del misil nuclear): cada personalidad tiene las suyas
+-- ============================================================================
+local WEAPONS_BY_PERSONA = {
+	CONQUEROR = { "BOMB", "ARTILLERY" },
+	OPPORTUNIST = { "ARTILLERY", "BOMB" },
+	TURTLE = { "ARTILLERY" },
+	ADMIRAL = { "BOMB" },
+	NUKER = { "METEOR", "QUAKE" },
+	MERCHANT = {},
+}
+
+-- Ataca con un arma a quien acaba de atacar al bot o, si nadie, al líder; solo a vecinos con frontera
+local function tryWeapon(engine, n, info, key, leaderId, leaderShare)
+	local list = WEAPONS_BY_PERSONA[key]
+	if not list or #list == 0 or engine.rng:NextNumber() > 0.35 then
+		return
+	end
+	local targetId = nil
+	local newest = -math.huge
+	for id, t in pairs(n.attackedBy) do
+		local en = engine.nations[id]
+		if en and en.alive and engine.time - t < 20 and t > newest and info.enemyCells[id] then
+			newest = t
+			targetId = id
+		end
+	end
+	if not targetId and leaderId and leaderId ~= n.id and leaderShare >= 0.2 and info.enemyCells[leaderId] then
+		targetId = leaderId
+	end
+	if not targetId then
+		return
+	end
+	local kind = list[engine.rng:NextInteger(1, #list)]
+	local def = engine.WEAPONS[kind]
+	-- Se reserva oro para construir: las armas solo gastan el excedente
+	if not def or n.gold < def.cost + 300 then
+		return
+	end
+	local cell = pick(info.enemyCells[targetId], engine.rng)
+	if cell then
+		engine:weapon(n, kind, cell)
+	end
+end
+
+-- ============================================================================
 -- DESEMBARCOS
 -- ============================================================================
 local function tryLanding(engine, n, info, naval)
@@ -456,6 +501,7 @@ function BotAI.think(engine, n)
 
 	tryBuild(engine, n, info, p)
 	tryNuke(engine, n, info, p, leaderId, leaderShare)
+	tryWeapon(engine, n, info, key, leaderId, leaderShare)
 
 	if busy then
 		return
@@ -530,6 +576,40 @@ function BotAI.think(engine, n)
 		tryLanding(engine, n, info, false)
 	elseif p.ports > 0 and #n.ports > 0 and n.troops > 1500 and rng:NextNumber() < 0.35 then
 		tryLanding(engine, n, info, true)
+	end
+end
+
+-- ============================================================================
+-- AUTOJUEGO PARA JUGADORES HUMANOS
+-- Solo decide a quién atacar: nunca construye, ni gasta oro, ni lanza misiles (eso lo decide el jugador).
+--   EXPAND   : se expande por la tierra libre vecina.
+--   CONQUER  : como EXPAND y, cuando no queda tierra libre, ataca al vecino más débil que pueda vencer.
+-- ============================================================================
+function BotAI.autoplay(engine, n, mode, ratio)
+	if not n.alive or n.troops < 250 or #n.attacks >= 2 then
+		return
+	end
+	local info = scan(engine, n, math.clamp(n.cells // 250, 1, 6))
+	local counts = info.counts
+	if (counts[0] or 0) > 0 then
+		engine:launchAttack(n, 0, ratio)
+		return
+	end
+	if mode ~= "CONQUER" then
+		return
+	end
+	local bestId, bestTroops = nil, math.huge
+	for id in pairs(counts) do
+		if id ~= 0 then
+			local en = engine.nations[id]
+			-- Solo ataca si tiene ventaja clara: así el autojuego no malgasta las tropas del jugador
+			if en and en.alive and n.troops > en.troops * 1.3 and en.troops < bestTroops then
+				bestId, bestTroops = id, en.troops
+			end
+		end
+	end
+	if bestId then
+		engine:launchAttack(n, bestId, ratio)
 	end
 end
 

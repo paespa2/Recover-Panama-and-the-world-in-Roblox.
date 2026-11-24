@@ -33,6 +33,8 @@ local WorldStats = remote("WorldStats")
 local WorldMe = remote("WorldMe")
 local WorldNotice = remote("WorldNotice")
 local WorldCommand = remote("WorldCommand")
+local WorldRoster = remote("WorldRoster") -- una nación nueva (jugador que entra) para quienes ya están en la partida
+local WorldFx = remote("WorldFx") -- efectos visuales de las armas (explosiones, terremotos...)
 
 local engine = nil
 local config = { planet = "EARTH", bots = 40, difficulty = "NORMAL", mode = "FREE" }
@@ -56,6 +58,7 @@ local function sendInit(player)
 		stats = engine:getStats(),
 		difficulty = engine.difficultyName,
 		mode = engine.mode,
+		teamMode = engine.teamMode,
 	})
 end
 
@@ -67,6 +70,9 @@ local function joinPlayer(player)
 	if not n then
 		n = engine:addHuman(player)
 		humanNations[player] = n
+		-- Los demás clientes no la tienen en su lista de naciones (se envió al empezar): sin esto no verían
+		-- su color, su rótulo ni su capital
+		WorldRoster:FireAllClients(engine:rosterEntry(n))
 	end
 	sendInit(player)
 end
@@ -94,7 +100,10 @@ local function sanitize(cmd)
 	end
 	local bots = math.clamp(math.floor(tonumber(cmd.bots) or 40), 0, 90)
 	-- El modo PAÍSES solo existe en la Tierra
-	local mode = if cmd.mode == "COUNTRIES" and planet == "EARTH" then "COUNTRIES" else "FREE"
+	local mode = "FREE"
+	if planet == "EARTH" and (cmd.mode == "COUNTRIES" or cmd.mode == "CONTINENTS") then
+		mode = cmd.mode
+	end
 	return { planet = planet, bots = bots, difficulty = difficulty, mode = mode }
 end
 
@@ -163,6 +172,25 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 		if not ok then
 			notice(player, "⚠️ " .. tostring(msg))
 		end
+	elseif action == "DEBUG_DISASTER" and RunService:IsStudio() then
+		-- Solo en Studio: provoca un desastre ahora mismo (kind opcional) para probar animaciones y efectos
+		local kind = tostring(cmd.kind or "")
+		if engine.DISASTER_INFO[kind] and cell >= 0 then
+			engine:runDisaster(kind, if validCell then cell else 0)
+		else
+			engine:startDisaster()
+		end
+	elseif action == "DEBUG_PROPAGATION" and RunService:IsStudio() then
+		-- Solo en Studio: cambia el estilo de propagación para compararlos
+		local style = tostring(cmd.style)
+		if style == "CELL" or style == "ORGANIC" or style == "TENDRIL" then
+			engine.propagation = style
+		end
+	elseif action == "WEAPON" and validCell then
+		local ok, msg = engine:weapon(n, tostring(cmd.kind), cell)
+		if not ok then
+			notice(player, "⚠️ " .. tostring(msg))
+		end
 	elseif action == "NUKE" and validCell then
 		local ok, msg = engine:nuke(n, cell)
 		if not ok then
@@ -172,6 +200,13 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 		engine:retreat(n)
 	elseif action == "DEFENSE_AI" then
 		n.defenseAI = (cmd.on == true)
+	elseif action == "AUTO" then
+		-- Autojuego: OFF / EXPAND / CONQUER y el porcentaje de tropas por ataque
+		local mode = tostring(cmd.mode)
+		if mode == "OFF" or mode == "EXPAND" or mode == "CONQUER" then
+			n.autoMode = mode
+		end
+		n.autoRatio = math.clamp(tonumber(cmd.ratio) or 0.4, 0.1, 1)
 	end
 end)
 
@@ -201,6 +236,15 @@ RunService.Heartbeat:Connect(function(dt)
 		local diff = engine:flushDiff()
 		if diff then
 			WorldDiff:FireAllClients(diff)
+		end
+	end
+
+	-- Efectos de armas: se envían a todos; si hay una ráfaga enorme se recorta para no saturar la red
+	local fxEvents = engine.fxEvents
+	if #fxEvents > 0 then
+		engine.fxEvents = {}
+		for i = 1, math.min(#fxEvents, 12) do
+			WorldFx:FireAllClients(fxEvents[i])
 		end
 	end
 

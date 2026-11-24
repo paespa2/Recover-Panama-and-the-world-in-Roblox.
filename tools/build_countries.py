@@ -189,7 +189,14 @@ def main():
         help="exporta una capa PNG transparente con las fronteras entre paises (2x2 px por celda) en "
         "tools/previews/border_tile_N.png, partida en teselas de 960 px de ancho",
     )
+    ap.add_argument(
+        "--border-rgba",
+        default="150,158,172,200",
+        help="color de las fronteras de --borders como R,G,B,A (por defecto un gris medio neutro que se lee sobre "
+        "desierto, selva y nieve sin ser negro)",
+    )
     args = ap.parse_args()
+    border_rgba = tuple(int(v) for v in args.border_rgba.split(","))
 
     cache = os.path.join(here, ".cache", "ne_50m_admin_0_countries.geojson")
     print("Fronteras de Natural Earth...")
@@ -304,12 +311,11 @@ def main():
         edge = np.zeros(hi_ids.shape, dtype=bool)
         dx = (hi_ids[:, :-1] != hi_ids[:, 1:]) & (hi_ids[:, :-1] > 0) & (hi_ids[:, 1:] > 0)
         dy = (hi_ids[:-1, :] != hi_ids[1:, :]) & (hi_ids[:-1, :] > 0) & (hi_ids[1:, :] > 0)
+        # Un solo pixel de alta resolucion por frontera (mitad de grosor que marcando ambos lados)
         edge[:, :-1] |= dx
-        edge[:, 1:] |= dx
         edge[:-1, :] |= dy
-        edge[1:, :] |= dy
         rgba = np.zeros(hi_ids.shape + (4,), dtype=np.uint8)
-        rgba[edge] = (22, 24, 34, 215)
+        rgba[edge] = border_rgba
         for t in range((W * s) // 960):
             tile = np.ascontiguousarray(rgba[:, t * 960 : (t + 1) * 960])
             path = os.path.join(preview_dir, f"border_tile_{t}.png")
