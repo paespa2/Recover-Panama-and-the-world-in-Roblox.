@@ -156,22 +156,14 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 	local cell = math.floor(tonumber(cmd.cell) or -1)
 	local validCell = cell >= 0 and cell < engine.size
 
+	-- Las acciones del jugador son INTENCIONES: el motor las ejecuta al inicio del siguiente tick (ver Engine:runIntents)
+	local intent = nil
 	if action == "SPAWN" and validCell then
-		local ok, msg = engine:setSpawn(n, cell)
-		if not ok then
-			notice(player, "⚠️ " .. tostring(msg))
-		end
+		intent = { a = "SPAWN", cell = cell }
 	elseif action == "ATTACK" and validCell then
-		local ratio = math.clamp(tonumber(cmd.ratio) or 0.5, 0.1, 1)
-		local ok, msg = engine:playerAttack(n, cell, ratio)
-		if not ok and msg then
-			notice(player, "⚠️ " .. msg)
-		end
+		intent = { a = "ATTACK", cell = cell, ratio = math.clamp(tonumber(cmd.ratio) or 0.5, 0.1, 1) }
 	elseif action == "BUILD" and validCell then
-		local ok, msg = engine:build(n, tostring(cmd.kind), cell)
-		if not ok then
-			notice(player, "⚠️ " .. tostring(msg))
-		end
+		intent = { a = "BUILD", cell = cell, kind = tostring(cmd.kind) }
 	elseif action == "DEBUG_DISASTER" and RunService:IsStudio() then
 		-- Solo en Studio: provoca un desastre ahora mismo (kind opcional) para probar animaciones y efectos
 		local kind = tostring(cmd.kind or "")
@@ -187,26 +179,23 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 			engine.propagation = style
 		end
 	elseif action == "WEAPON" and validCell then
-		local ok, msg = engine:weapon(n, tostring(cmd.kind), cell)
-		if not ok then
-			notice(player, "⚠️ " .. tostring(msg))
-		end
+		intent = { a = "WEAPON", cell = cell, kind = tostring(cmd.kind) }
 	elseif action == "NUKE" and validCell then
-		local ok, msg = engine:nuke(n, cell)
-		if not ok then
-			notice(player, "⚠️ " .. tostring(msg))
-		end
+		intent = { a = "NUKE", cell = cell }
 	elseif action == "RETREAT" then
-		engine:retreat(n)
+		intent = { a = "RETREAT" }
 	elseif action == "DEFENSE_AI" then
-		n.defenseAI = (cmd.on == true)
+		intent = { a = "DEFENSE_AI", on = (cmd.on == true) }
 	elseif action == "AUTO" then
 		-- Autojuego: OFF / EXPAND / CONQUER y el porcentaje de tropas por ataque
 		local mode = tostring(cmd.mode)
-		if mode == "OFF" or mode == "EXPAND" or mode == "CONQUER" then
-			n.autoMode = mode
+		if mode ~= "OFF" and mode ~= "EXPAND" and mode ~= "CONQUER" then
+			mode = nil
 		end
-		n.autoRatio = math.clamp(tonumber(cmd.ratio) or 0.4, 0.1, 1)
+		intent = { a = "AUTO", mode = mode, ratio = math.clamp(tonumber(cmd.ratio) or 0.4, 0.1, 1) }
+	end
+	if intent then
+		engine:submit(n, intent)
 	end
 end)
 

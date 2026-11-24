@@ -176,6 +176,7 @@ local WEIGHTED = {
 }
 
 local GRUDGE_SECONDS = 30
+local HUMAN_GRACE = 150 -- segundos de guerra durante los que los bots no atacan a jugadores humanos
 local NUKE_COOLDOWN = 40
 local COALITION_SHARE = 0.35
 
@@ -526,7 +527,9 @@ function BotAI.think(engine, n)
 				local grudge = grudgeT ~= nil and (now - grudgeT) < GRUDGE_SECONDS
 				local isLeader = id == leaderId and leaderShare >= COALITION_SHARE and leaderId ~= n.id
 				local safe = ratio >= d.edge * p.cautious
-				if safe or isLeader or (grudge and ratio > 0.9) then
+				-- Periodo de gracia: los bots no atacan a humanos durante los primeros segundos de guerra
+				local graceHuman = not en.isBot and (engine.time - (engine.battleStart or 0)) < HUMAN_GRACE
+				if not graceHuman and (safe or isLeader or (grudge and ratio > 0.9)) then
 					local score = p.aggression * (0.4 + p.weak * math.clamp(ratio - 0.8, -0.5, 3))
 					if grudge then
 						score += 1.5 * p.spite

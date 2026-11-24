@@ -39,6 +39,7 @@ WorldGrid.PLANETS = {
 		icon = "🔴",
 		kind = "noise",
 		seed = 11,
+		style = "mars",
 		freq = 1.7,
 		thr = 0.05,
 		ocean = { 46, 20, 18 },
@@ -53,6 +54,7 @@ WorldGrid.PLANETS = {
 		icon = "🌕",
 		kind = "noise",
 		seed = 23,
+		style = "moon",
 		freq = 2.5,
 		thr = 0.07,
 		ocean = { 22, 24, 32 },
@@ -67,6 +69,7 @@ WorldGrid.PLANETS = {
 		icon = "🟠",
 		kind = "noise",
 		seed = 37,
+		style = "venus",
 		freq = 1.5,
 		thr = 0.0,
 		ocean = { 104, 46, 18 },
@@ -1707,6 +1710,60 @@ local function loadSatellite()
 	return nil
 end
 
+-- Relieve de los planetas procedurales (Marte, Luna, Venus): elevación en 3 octavas + rasgos propios de cada mundo
+local planetElev = nil -- u8 por celda (0..255)
+
+local function elevAt(x, y)
+	return buffer.readu8(planetElev, math.clamp(y, 0, H - 1) * W + (x % W))
+end
+
+local function computeElevation(def)
+	local e = buffer.create(W * H)
+	for y = 0, H - 1 do
+		for x = 0, W - 1 do
+			local v = 0.55 * cylNoise(x, y, def.freq * 1.3, def.seed + 2)
+				+ 0.3 * cylNoise(x, y, def.freq * 3.1, def.seed + 9)
+				+ 0.15 * cylNoise(x, y, def.freq * 7.0, def.seed + 17)
+			buffer.writeu8(e, y * W + x, math.clamp(math.floor((v + 0.6) / 1.2 * 255), 0, 255))
+		end
+	end
+	return e
+end
+
+local function planetPixel(def, x, y)
+	local r, g, b = mix3(def.landB, def.landA, elevAt(x, y) / 255)
+	local style = def.style
+	if style == "mars" then
+		-- Cañón largo y oscuro (estilo Valles Marineris) y casquetes polares helados
+		if math.abs(cylNoise(x, y, def.freq * 0.8, def.seed + 50)) < 0.035 then
+			r, g, b = r * 0.55, g * 0.5, b * 0.5
+		end
+		local pole = math.max(0, 1 - math.min(y, H - 1 - y) / (H * 0.07))
+		if pole > 0 then
+			r, g, b = lerp(r, 238, pole), lerp(g, 226, pole), lerp(b, 232, pole)
+		end
+	elseif style == "moon" then
+		-- Mares basálticos oscuros y cráteres con borde marcado
+		local maria = cylNoise(x, y, def.freq * 0.9, def.seed + 5)
+		if maria < -0.18 then
+			local k = math.clamp((-0.18 - maria) * 3, 0, 0.7)
+			r, g, b = lerp(r, 78, k), lerp(g, 80, k), lerp(b, 92, k)
+		end
+		if math.abs(cylNoise(x, y, def.freq * 5.5, def.seed + 23) - 0.22) < 0.018 then
+			r, g, b = r * 0.7, g * 0.7, b * 0.72
+		end
+	elseif style == "venus" then
+		-- Canales de lava incandescente entre llanuras volcánicas
+		if math.abs(cylNoise(x, y, def.freq * 2.0, def.seed + 41)) < 0.03 then
+			r, g, b = lerp(r, 255, 0.75), lerp(g, 118, 0.75), lerp(b, 34, 0.75)
+		end
+	end
+	-- Sombreado direccional del relieve (luz desde el noroeste)
+	local dzdx = (elevAt(x + 1, y) - elevAt(x - 1, y)) / 255
+	local dzdy = (elevAt(x, y + 1) - elevAt(x, y - 1)) / 255
+	return r, g, b, math.clamp(1.0 - (dzdx + dzdy) * 2.4, 0.62, 1.4)
+end
+
 function WorldGrid.BuildBase(planetId, land)
 	local def = WorldGrid.PLANETS[planetId] or WorldGrid.PLANETS.EARTH
 	if def.kind == "earth" then
@@ -1716,6 +1773,9 @@ function WorldGrid.BuildBase(planetId, land)
 		end
 	end
 	local base = buffer.create(W * H * 3)
+	if def.kind == "noise" then
+		planetElev = computeElevation(def)
+	end
 
 	local function isLand(x, y)
 		if y < 0 or y >= H then
@@ -1759,7 +1819,7 @@ function WorldGrid.BuildBase(planetId, land)
 					r, g, b = mix3(def.landA, def.landB, rr)
 				else
 					local t = (math.noise(x * 0.16, y * 0.2, 4.4) + 1) * 0.5
-					r, g, b = mix3(def.landA, def.landB, t)
+					r, g, b, shade = planetPixel(def, x, y)
 				end
 				r, g, b = r * shade, g * shade, b * shade
 			else

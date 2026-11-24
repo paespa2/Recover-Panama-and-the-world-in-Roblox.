@@ -65,10 +65,10 @@ Engine.WEAPONS = {
 Engine.WEAPON_ORDER = { "BOMB", "ARTILLERY", "METEOR", "QUAKE" }
 
 local DIFFICULTY = {
-	EASY = { think = 5.0, maxAttacks = 1, minRatio = 0.2, maxRatio = 0.35, growth = 0.8, edge = 1.4 },
-	NORMAL = { think = 3.5, maxAttacks = 2, minRatio = 0.25, maxRatio = 0.5, growth = 1.0, edge = 1.0 },
-	HARD = { think = 2.5, maxAttacks = 2, minRatio = 0.3, maxRatio = 0.6, growth = 1.2, edge = 0.8 },
-	EXTREME = { think = 1.8, maxAttacks = 3, minRatio = 0.35, maxRatio = 0.7, growth = 1.5, edge = 0.6 },
+	EASY = { think = 7.0, maxAttacks = 1, minRatio = 0.15, maxRatio = 0.3, growth = 0.7, edge = 1.8 },
+	NORMAL = { think = 5.5, maxAttacks = 1, minRatio = 0.2, maxRatio = 0.4, growth = 0.9, edge = 1.5 },
+	HARD = { think = 4.0, maxAttacks = 2, minRatio = 0.25, maxRatio = 0.5, growth = 1.1, edge = 1.2 },
+	EXTREME = { think = 2.5, maxAttacks = 2, minRatio = 0.3, maxRatio = 0.6, growth = 1.4, edge = 0.9 },
 }
 Engine.DIFFICULTY = DIFFICULTY
 
@@ -223,7 +223,7 @@ local function buildTerrainCost(planetId, land, w, h)
 	return cost
 end
 
-function Engine.new(planetId, botCount, difficulty, mode)
+function Engine.new(planetId, botCount, difficulty, mode, seed)
 	local grid = WorldGrid.Generate(planetId)
 	local self = setmetatable({}, Engine)
 	self.planetId = if WorldGrid.PLANETS[planetId] then planetId else "EARTH"
@@ -251,7 +251,12 @@ function Engine.new(planetId, botCount, difficulty, mode)
 	self.winner = nil
 	self.nextId = 1
 	self.humanCount = 0
-	self.rng = Random.new()
+	-- Semilla de la partida: con la misma semilla y las mismas intenciones la simulación se repite (repeticiones y pruebas)
+	self.seed = seed or (os.time() % 2147483647)
+	self.rng = Random.new(self.seed)
+	self.tickCount = 0
+	self.pending = {} -- intenciones de los jugadores pendientes de ejecutar
+	self.intentLog = {} -- { t = tick, id = nación, intent = ... } para reproducir la partida
 	self.disasterTimer = 55 + self.rng:NextNumber() * 30 -- primer desastre 55-85 s después de empezar la guerra
 	self._nb = {}
 
@@ -327,6 +332,69 @@ end
 
 function Engine:notify(userId, text)
 	table.insert(self.events, { userId = userId, text = text })
+end
+
+-- ============================================================================
+-- INTENCIONES Y EJECUCIONES (diseño tomado de la arquitectura documentada de OpenFront: los jugadores solo
+-- envían intenciones y únicamente el motor modifica el estado, siempre al principio de un tick)
+-- ============================================================================
+local INTENT_HANDLERS = {
+	SPAWN = function(e, n, i)
+		return e:setSpawn(n, i.cell)
+	end,
+	ATTACK = function(e, n, i)
+		return e:playerAttack(n, i.cell, i.ratio)
+	end,
+	BUILD = function(e, n, i)
+		return e:build(n, i.kind, i.cell)
+	end,
+	WEAPON = function(e, n, i)
+		return e:weapon(n, i.kind, i.cell)
+	end,
+	NUKE = function(e, n, i)
+		return e:nuke(n, i.cell)
+	end,
+	RETREAT = function(e, n)
+		e:retreat(n)
+		return true
+	end,
+	DEFENSE_AI = function(_, n, i)
+		n.defenseAI = i.on == true
+		return true
+	end,
+	AUTO = function(_, n, i)
+		if i.mode then
+			n.autoMode = i.mode
+		end
+		n.autoRatio = i.ratio or 0.4
+		return true
+	end,
+}
+local INTENT_LOG_MAX = 20000
+
+-- Encola la intención de una nación; no cambia el estado hasta runIntents
+function Engine:submit(n, intent)
+	if #self.pending < 400 and INTENT_HANDLERS[intent.a] then
+		table.insert(self.pending, { n = n, intent = intent })
+	end
+end
+
+-- Ejecuta las intenciones pendientes (se llama al inicio de cada tick)
+function Engine:runIntents()
+	local pending = self.pending
+	if #pending == 0 then
+		return
+	end
+	self.pending = {}
+	for _, p in ipairs(pending) do
+		local ok, msg = INTENT_HANDLERS[p.intent.a](self, p.n, p.intent)
+		if ok == false and msg and p.n.userId then
+			self:notify(p.n.userId, "⚠️ " .. tostring(msg))
+		end
+		if #self.intentLog < INTENT_LOG_MAX then
+			table.insert(self.intentLog, { t = self.tickCount, id = p.n.id, intent = p.intent })
+		end
+	end
 end
 
 -- ============================================================================
@@ -1441,6 +1509,7 @@ function Engine:beginRunning()
 		end
 	end
 	self.phase = "BATTLE"
+	self.battleStart = self.time -- los bots no atacan a jugadores humanos durante un periodo de gracia
 	self:notify(nil, "⚔️ ¡La conquista mundial ha comenzado!")
 end
 
@@ -1564,6 +1633,8 @@ function Engine:tick(dt)
 		return
 	end
 	self.time += dt
+	self.tickCount += 1
+	self:runIntents()
 	if self.phase == "SPAWN" then
 		self.spawnTimer -= dt
 		if self.spawnTimer <= 0 then

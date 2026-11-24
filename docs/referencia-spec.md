@@ -46,5 +46,16 @@ Primeros ~60 s: menú principal (PLAY SOLO, partidas públicas, tienda). Despué
 - **Barra inferior:** Tropas (+1.86K/s), % de ataque (25 %), Oro (+3.2K/s) y ranuras de construcción numeradas 1-9.
 - **Arriba al centro:** clasificación ("Tú lideras · 3.4 %").
 
+## Referencia técnica documentada: OpenFront.io (código abierto, AGPL-3.0)
+Repositorio: https://github.com/openfrontio/OpenFrontIO (docs/Architecture.md). Mismo género (conquista territorial con
+tropas en %, edificios, alianzas, silos/SAM). **Solo se toman ideas de arquitectura; no se copia código (AGPL).**
+- **Simulación determinista** (núcleo puro, sin dependencias) separada de cliente y servidor.
+- **Intenciones → turnos → ejecuciones:** el jugador crea una *intención*; el servidor reúne las de cada tick en un
+  *turno*; el núcleo crea una *ejecución* por intención. Solo las ejecuciones modifican el estado.
+- Al final de cada tick el núcleo emite *actualizaciones* y el cliente solo las dibuja.
+- PRNG con semilla y matemáticas deterministas → repeticiones (replays) y pruebas fiables.
+- Mapas como datos aparte; capas con límites comprobados por tests.
+- Documentos útiles: Architecture.md, Maps.md, Replays.md, OnboardingTutorial.md, ScenarioEditor.md.
+
 ## Pendiente de verificar con material visual
 Colores, tamaño del píxel, duraciones y easing de las animaciones. Requiere vídeo o capturas.
