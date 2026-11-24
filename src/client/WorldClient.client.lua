@@ -909,6 +909,64 @@ local function playWeaponFx(fx)
 end
 WorldFx.OnClientEvent:Connect(playWeaponFx)
 
+-- ----------------------------------------------------------------------------
+-- FRENTES DE BATALLA (estilo RoWorld): flecha hacia el enemigo con las tropas del ataque + chispa blanca de choque
+-- ----------------------------------------------------------------------------
+local frontLabels = {}
+local ARROWS = { "➡", "↗", "⬆", "↖", "⬅", "↙", "⬇", "↘" }
+
+local function troopText(k)
+	if k >= 1000000 then
+		return string.format("%.1fM", k / 1000000)
+	elseif k >= 1000 then
+		return string.format("%dK", math.floor(k / 1000))
+	end
+	return tostring(k)
+end
+
+local function updateFronts(fronts)
+	for _, l in ipairs(frontLabels) do
+		l.Visible = false
+	end
+	if not state.initialized or not fronts then
+		return
+	end
+	for i, f in ipairs(fronts) do
+		local l = frontLabels[i]
+		if not l then
+			l = Instance.new("TextLabel")
+			l.AnchorPoint = Vector2.new(0.5, 0.5)
+			l.Size = UDim2.fromOffset(84, 22)
+			l.BackgroundTransparency = 1
+			l.Font = Enum.Font.GothamBlack
+			l.TextSize = 14
+			l.TextStrokeTransparency = 0
+			l.TextStrokeColor3 = Color3.new(1, 1, 1)
+			l.ZIndex = 18
+			l.Parent = mapCanvas
+			frontLabels[i] = l
+		end
+		local w = state.w
+		local cx, cy = f.c % w, f.c // w
+		local atk = state.rosterById[f.a]
+		local dir = 1
+		if atk and atk.capital and atk.capital >= 0 then
+			local dx, dy = cx - atk.capital % w, cy - atk.capital // w
+			local a = math.atan2(-dy, dx)
+			dir = (math.floor(a / (math.pi / 4) + 0.5) % 8) + 1
+		end
+		l.Text = ARROWS[dir] .. " " .. troopText(f.k)
+		l.TextColor3 = if f.a == state.myId
+			then Color3.fromRGB(255, 200, 30)
+			else (if atk and atk.color then state.vividColor(atk.color, f.a) else Color3.fromRGB(255, 90, 90))
+		l.TextColor3 = l.TextColor3:Lerp(Color3.new(0, 0, 0), 0.35) -- oscuro: contrasta con el borde blanco
+		l.Position = UDim2.fromScale((cx + 0.5) / w, (cy + 0.5) / state.h)
+		l.Visible = true
+		fxCircle(f.c, 1, 5, Color3.new(1, 1, 1), 0.2, 0.9, 17) -- chispa blanca del choque
+	end
+end
+state.updateFronts = updateFronts
+
 -- ============================================================================
 -- PANTALLA DE LOBBY: modo de juego, mapa y dificultad.
 -- Se muestra al entrar y se reabre desde "☰ Menú". El anfitrión (primer jugador) crea la partida;
@@ -2035,12 +2093,20 @@ local function applyLabelZoom()
 		m.dot.Size = UDim2.fromOffset(ds, ds)
 		local show = m.always or rel >= 1.8
 		m.label.Visible = show
+		if m.troops then
+			m.troops.Visible = show and m.troops.Text ~= ""
+		end
 		if show then
 			local size = math.clamp(math.floor(7 + 3 * rel), 8, 17) + (if m.strong then 2 else 0)
 			local width = math.max(100, size * 14)
 			m.label.TextSize = size
 			m.label.Size = UDim2.fromOffset(width, size + 6)
 			m.label.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2)
+			if m.troops then
+				m.troops.TextSize = math.max(8, size - 1)
+				m.troops.Size = UDim2.fromOffset(width, size + 4)
+				m.troops.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2 + size + 4)
+			end
 		end
 	end
 end
@@ -2143,8 +2209,24 @@ local function updateMarkers()
 			nameLbl.ZIndex = 11
 			nameLbl.Parent = marker
 
+			-- Tropas debajo del nombre, como en RoWorld ("Guyana 21.1K")
+			local troopsLbl = Instance.new("TextLabel")
+			troopsLbl.Name = "Troops"
+			troopsLbl.Size = UDim2.fromOffset(100, 14)
+			troopsLbl.BackgroundTransparency = 1
+			troopsLbl.Font = Enum.Font.GothamBlack
+			troopsLbl.Text = ""
+			troopsLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+			troopsLbl.TextStrokeTransparency = 0.25
+			troopsLbl.TextStrokeColor3 = Color3.fromRGB(8, 10, 16)
+			troopsLbl.TextSize = 9
+			troopsLbl.ZIndex = 11
+			troopsLbl.Parent = marker
+
 			table.insert(markerPool, marker)
 			table.insert(markerLabels, {
+				id = n.id,
+				troops = troopsLbl,
 				label = nameLbl,
 				dot = dot,
 				isMe = isMe,
@@ -2159,6 +2241,20 @@ end
 -- ============================================================================
 -- INTERACCIÓN CON EL MAPA (Clic para Atacar, Construir, Nuke o Spawn)
 -- ============================================================================
+-- Actualiza las tropas bajo cada rótulo (llega cada segundo con las estadísticas)
+local function updateLabelTroops()
+	local byId = state.statById
+	if not byId then
+		return
+	end
+	for _, m in ipairs(markerLabels) do
+		local e = byId[m.id]
+		m.troops.Text = if e then troopText(e.troops) else ""
+		m.troops.Visible = m.label.Visible and m.troops.Text ~= ""
+	end
+end
+state.updateLabelTroops = updateLabelTroops
+
 local function screenToCell(screenPos)
 	local canvasPos = mapCanvas.AbsolutePosition
 	local canvasSize = mapCanvas.AbsoluteSize
@@ -3922,6 +4018,7 @@ end)
 
 WorldStats.OnClientEvent:Connect(function(stats)
 	state.stats = stats
+	updateFronts(stats.fronts)
 	updateSpawnUI()
 	updatePlayerPings()
 	-- Búsquedas rápidas para el tooltip y el ranking
@@ -3929,6 +4026,7 @@ WorldStats.OnClientEvent:Connect(function(stats)
 	for _, e in ipairs(stats.nations or {}) do
 		state.statById[e.id] = e
 	end
+	updateLabelTroops()
 	state.humanById = {}
 	for _, t in ipairs(stats.taken or {}) do
 		state.humanById[t.nid] = t

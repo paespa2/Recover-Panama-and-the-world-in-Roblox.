@@ -1681,7 +1681,26 @@ function Engine:getStats()
 		local pn = self.nations[p.nid]
 		p.team = pn and pn.continent
 	end
+	-- Frentes activos entre naciones (ataque a otra nación): el cliente dibuja flechas con las tropas y chispas
+	local fronts = {}
+	for _, n in ipairs(self.list) do
+		if n.alive then
+			for _, atk in ipairs(n.attacks) do
+				local first = atk.queue[1]
+				if atk.target ~= 0 and first and atk.troops >= 50 then
+					table.insert(fronts, { a = n.id, t = atk.target, k = math.floor(atk.troops), c = first })
+				end
+			end
+		end
+	end
+	table.sort(fronts, function(x, y)
+		return x.k > y.k
+	end)
+	for k = #fronts, 25, -1 do
+		fronts[k] = nil
+	end
 	return {
+		fronts = fronts,
 		mode = self.mode,
 		teamMode = self.teamMode,
 		teams = teams,
