@@ -48,7 +48,8 @@ class StudioClient:
         content_text = resp["result"]["content"][0]["text"]
         data = json.loads(content_text)
         studio = data["studios"][0]
-        print(f"Found Studio: {studio['name']} (ID: {studio['id']}, Mode: {studio['mode']})")
+        mode_str = studio.get("mode", "Edit")
+        print(f"Found Studio: {studio['name']} (ID: {studio['id']}, Mode: {mode_str})")
         return studio["id"]
 
     def execute_luau(self, code, datamodel_type="Edit"):

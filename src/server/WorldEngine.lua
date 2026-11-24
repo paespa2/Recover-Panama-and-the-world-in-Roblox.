@@ -1331,6 +1331,7 @@ function Engine:playerAttack(n, cell, ratio)
 				local lok, lmsg = self:landing(n, cell, math.max(300, math.floor(n.troops * ratio * 0.5)))
 				if lok then
 					self:notify(n.userId, "⚓ ¡Desembarco exitoso! Expandiéndote desde la costa")
+					self:fx("NAVAL_LANDING", cell, 6, port.cell)
 					return true
 				end
 				return false, lmsg
@@ -1377,6 +1378,7 @@ function Engine:build(n, kind, cell)
 	local b = { kind = kind, cell = cell, owner = n.id }
 	self.buildingAt[cell] = b
 	table.insert(n.buildings, b)
+	self:fx("BUILDING_PLACED", cell, 3)
 	if kind == "City" then
 		n.cities += 1
 	elseif kind == "Post" then
@@ -1663,8 +1665,8 @@ function Engine:runDisaster(kind, cell)
 end
 
 -- Efecto visual de un arma (lo recogen los clientes a través de WorldFx)
-function Engine:fx(kind, cell, radius)
-	table.insert(self.fxEvents, { kind = kind, cell = cell, r = radius })
+function Engine:fx(kind, cell, radius, fromCell)
+	table.insert(self.fxEvents, { kind = kind, cell = cell, r = radius, from = fromCell })
 end
 
 -- Un impacto: las celdas enemigas del círculo pierden dueño (según def.destroy). Acumula las bajas en victims.
@@ -2130,8 +2132,13 @@ function Engine:getStats()
 	for k = #fronts, 25, -1 do
 		fronts[k] = nil
 	end
+	local allBuildings = {}
+	for cell, b in pairs(self.buildingAt) do
+		table.insert(allBuildings, { cell = cell, kind = b.kind, owner = b.owner })
+	end
 	return {
 		fronts = fronts,
+		buildings = allBuildings,
 		mode = self.mode,
 		teamMode = self.teamMode,
 		teams = teams,

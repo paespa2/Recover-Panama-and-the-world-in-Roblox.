@@ -928,6 +928,120 @@ local function fxCircle(cell, fromCells, toCells, color, transparency, seconds, 
 	end)
 end
 
+local playSound = function() end
+do
+	local SoundService = game:GetService("SoundService")
+	local sfxFolder = Instance.new("Folder")
+	sfxFolder.Name = "WorldSFX"
+	sfxFolder.Parent = SoundService
+
+	local soundPool = {}
+	local SOUND_ASSETS = {
+		POP = "rbxasset://sounds/action_get_up.mp3",
+		EXPAND = "rbxasset://sounds/action_swim.mp3",
+		BUILD = "rbxasset://sounds/button.mp3",
+		SPAWN = "rbxasset://sounds/bell.wav",
+		ATTACK = "rbxasset://sounds/action_jump.mp3",
+		ALARM = "rbxasset://sounds/electronicpingshort.wav",
+		BOMB = "rbxasset://sounds/impact_explosion_01.mp3",
+	}
+
+	function playSound(name, pitch, volume)
+		local asset = SOUND_ASSETS[name]
+		if not asset then
+			return
+		end
+		local s = table.remove(soundPool)
+		if not s then
+			s = Instance.new("Sound")
+			s.Parent = sfxFolder
+		end
+		s.SoundId = asset
+		s.PlaybackSpeed = pitch or (0.95 + math.random() * 0.1)
+		s.Volume = volume or 0.4
+		s:Play()
+		task.delay(1.2, function()
+			table.insert(soundPool, s)
+		end)
+	end
+end
+
+local updateBuildings = function() end
+do
+	local buildingFrames = {}
+	local BUILDING_ICONS = {
+		City = "🏙️",
+		Factory = "🏭",
+		Port = "⚓",
+		Post = "🛡️",
+		Silo = "🚀",
+		SAM = "📡",
+		Warship = "🚢",
+		Farm = "🌾",
+		Mine = "⛏️",
+	}
+
+	function updateBuildings(bList)
+		if not state.initialized or not state.w or not state.h then
+			return
+		end
+		local seen = {}
+		local w, h = state.w, state.h
+		for _, b in ipairs(bList or {}) do
+			local cell = b.cell
+			seen[cell] = true
+			local f = buildingFrames[cell]
+			if not f then
+				f = Instance.new("Frame")
+				f.Name = "Bld_" .. tostring(cell)
+				f.AnchorPoint = Vector2.new(0.5, 0.5)
+				f.Size = UDim2.fromOffset(20, 20)
+				f.BackgroundColor3 = Color3.fromRGB(15, 20, 32)
+				f.BackgroundTransparency = 0.2
+				f.BorderSizePixel = 0
+				f.ZIndex = 12
+				f.Parent = markersLayer
+				roundCorners(f, 6)
+
+				local strk = Instance.new("UIStroke")
+				strk.Thickness = 1.5
+				strk.Color = Color3.fromRGB(255, 215, 0)
+				strk.Parent = f
+
+				local iconLbl = Instance.new("TextLabel")
+				iconLbl.Name = "Icon"
+				iconLbl.Size = UDim2.fromScale(1, 1)
+				iconLbl.BackgroundTransparency = 1
+				iconLbl.TextSize = 13
+				iconLbl.Font = Enum.Font.GothamBlack
+				iconLbl.ZIndex = 13
+				iconLbl.Parent = f
+
+				buildingFrames[cell] = f
+			end
+			local bx, by = cell % w, cell // w
+			f.Position = UDim2.fromScale((bx + 0.5) / w, (by + 0.5) / h)
+			local icon = BUILDING_ICONS[b.kind] or "🏛️"
+			local iconLbl = f:FindFirstChild("Icon")
+			if iconLbl then
+				iconLbl.Text = icon
+			end
+			local ownerNation = state.rosterById[b.owner]
+			local stroke = f:FindFirstChildOfClass("UIStroke")
+			if stroke and ownerNation and ownerNation.color then
+				stroke.Color = ownerNation.color
+			end
+			f.Visible = true
+		end
+
+		for cell, f in pairs(buildingFrames) do
+			if not seen[cell] then
+				f.Visible = false
+			end
+		end
+	end
+end
+
 local function playWeaponFx(fx)
 	if not state.initialized or type(fx) ~= "table" or not fx.cell or fx.cell >= state.w * state.h then
 		return
@@ -942,6 +1056,46 @@ local function playWeaponFx(fx)
 			end)
 		end
 		fxCircle(fx.cell, 1, d * 0.5, Color3.new(1, 1, 1), 0.05, 0.55, 17)
+		playSound("SPAWN", 1.0, 0.6)
+		return
+	end
+	if fx.kind == "BUILDING_PLACED" then
+		fxCircle(fx.cell, 1, 8, Color3.fromRGB(255, 230, 80), 0.25, 0.6, 15)
+		playSound("BUILD", 1.1, 0.4)
+		return
+	end
+	if fx.kind == "NAVAL_LANDING" then
+		local w, h = state.w, state.h
+		local fromCell = fx.from or fx.cell
+		local toCell = fx.cell
+		local fx0, fy0 = fromCell % w, fromCell // w
+		local fx1, fy1 = toCell % w, toCell // w
+		for k = 1, 3 do
+			task.delay((k - 1) * 0.16, function()
+				local boat = Instance.new("TextLabel")
+				boat.Text = if k == 2 then "🚢" else "⛵"
+				boat.TextSize = 16
+				boat.Size = UDim2.fromOffset(20, 20)
+				boat.AnchorPoint = Vector2.new(0.5, 0.5)
+				boat.BackgroundTransparency = 1
+				boat.Position = UDim2.fromScale((fx0 + 0.5) / w, (fy0 + 0.5) / h)
+				boat.ZIndex = 14
+				boat.Parent = mapCanvas
+
+				local dur = 1.0 + math.random() * 0.3
+				local tw = TweenService:Create(
+					boat,
+					TweenInfo.new(dur, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ Position = UDim2.fromScale((fx1 + 0.5) / w, (fy1 + 0.5) / h) }
+				)
+				tw:Play()
+				tw.Completed:Connect(function()
+					boat:Destroy()
+					fxCircle(toCell, 1, 8, Color3.fromRGB(80, 220, 255), 0.3, 0.6, 15)
+				end)
+			end)
+		end
+		playSound("EXPAND", 1.2, 0.5)
 		return
 	end
 	if fx.kind == "WARN" then
@@ -958,6 +1112,7 @@ local function playWeaponFx(fx)
 	if not style then
 		return
 	end
+	playSound("BOMB", 0.9, 0.7)
 	local diameter = (fx.r or 5) * 2 + 1
 	fxCircle(fx.cell, 1, diameter, style.color, 0.35, style.time, 14) -- onda expansiva
 	fxCircle(fx.cell, 1, diameter * 0.55, Color3.new(1, 1, 1), 0.1, style.time * 0.6, 15) -- destello central
@@ -2434,6 +2589,7 @@ local function handleMapClick(cell)
 	-- Fase de Batalla
 	if state.actionMode == "ATTACK" then
 		WorldCommand:FireServer({ a = "ATTACK", cell = cell, ratio = state.attackRatio })
+		playSound("ATTACK", 1.1, 0.35)
 		-- Feedback visual inmediato estilo FrontWars: onda de choque concéntrica y pulso de conquista
 		local o = buffer.readu8(state.owner, cell)
 		local isNeutral = (o == 0)
@@ -2474,6 +2630,7 @@ local function handleMapClick(cell)
 	elseif state.actionMode:sub(1, 6) == "BUILD_" then
 		local kind = state.actionMode:sub(7)
 		WorldCommand:FireServer({ a = "BUILD", kind = kind, cell = cell })
+		playSound("BUILD", 1.0, 0.4)
 	elseif state.actionMode == "DEMOLISH" then
 		WorldCommand:FireServer({ a = "DEMOLISH", cell = cell })
 	elseif state.actionMode:sub(1, 7) == "WEAPON_" then
@@ -2579,9 +2736,123 @@ local function updateMapTransform()
 	state.fit = math.min(viewportSize.X / BASE_WIDTH, viewportSize.Y / BASE_HEIGHT) -- zoom que muestra el mundo entero
 	state.detailDirty = true
 	applyLabelZoom()
+	if state.updateRadar then
+		state.updateRadar()
+	end
 end
 
 state.updateMapTransform = updateMapTransform
+
+-- Radar / Minimapa táctico estilo FrontWars (esquina inferior derecha)
+do
+	local radarCard = Instance.new("Frame")
+	radarCard.Name = "RadarFrame"
+	radarCard.AnchorPoint = Vector2.new(1, 1)
+	radarCard.Position = UDim2.new(1, -18, 1, -125)
+	radarCard.Size = UDim2.fromOffset(190, 80)
+	radarCard.BackgroundColor3 = Color3.fromRGB(12, 18, 30)
+	radarCard.BackgroundTransparency = 0.25
+	radarCard.BorderSizePixel = 0
+	radarCard.ZIndex = 30
+	radarCard.Parent = root
+	roundCorners(radarCard, 8)
+
+	local radarStroke = Instance.new("UIStroke")
+	radarStroke.Thickness = 1.5
+	radarStroke.Color = Color3.fromRGB(45, 75, 115)
+	radarStroke.Parent = radarCard
+
+	local radarTitle = Instance.new("TextLabel")
+	radarTitle.Size = UDim2.fromOffset(180, 16)
+	radarTitle.Position = UDim2.fromOffset(8, 4)
+	radarTitle.BackgroundTransparency = 1
+	radarTitle.Font = Enum.Font.GothamBold
+	radarTitle.Text = "🗺️ RADAR MUNDIAL"
+	radarTitle.TextColor3 = Color3.fromRGB(120, 190, 255)
+	radarTitle.TextSize = 10
+	radarTitle.TextXAlignment = Enum.TextXAlignment.Left
+	radarTitle.ZIndex = 31
+	radarTitle.Parent = radarCard
+
+	local radarView = Instance.new("Frame")
+	radarView.Name = "RadarCanvas"
+	radarView.Position = UDim2.fromOffset(6, 22)
+	radarView.Size = UDim2.fromOffset(178, 52)
+	radarView.BackgroundColor3 = Color3.fromRGB(8, 14, 24)
+	radarView.BorderSizePixel = 0
+	radarView.ZIndex = 31
+	radarView.ClipsDescendants = true
+	radarView.Parent = radarCard
+	roundCorners(radarView, 4)
+
+	local viewportBox = Instance.new("Frame")
+	viewportBox.Name = "ViewportIndicator"
+	viewportBox.BorderSizePixel = 0
+	viewportBox.BackgroundColor3 = Color3.fromRGB(0, 230, 160)
+	viewportBox.BackgroundTransparency = 0.8
+	viewportBox.ZIndex = 33
+	viewportBox.Parent = radarView
+	roundCorners(viewportBox, 2)
+
+	local boxStroke = Instance.new("UIStroke")
+	boxStroke.Thickness = 1.5
+	boxStroke.Color = Color3.fromRGB(80, 255, 180)
+	boxStroke.Parent = viewportBox
+
+	local capitalDot = Instance.new("Frame")
+	capitalDot.Name = "MyCapitalDot"
+	capitalDot.Size = UDim2.fromOffset(6, 6)
+	capitalDot.AnchorPoint = Vector2.new(0.5, 0.5)
+	capitalDot.BackgroundColor3 = Color3.fromRGB(255, 220, 0)
+	capitalDot.BorderSizePixel = 0
+	capitalDot.ZIndex = 34
+	capitalDot.Visible = false
+	capitalDot.Parent = radarView
+	roundCorners(capitalDot, 3)
+
+	local function updateRadar()
+		if not state.w or not state.h then
+			return
+		end
+		local vs = mapContainer.AbsoluteSize
+		local cw = BASE_WIDTH * state.zoom
+		local ch = BASE_HEIGHT * state.zoom
+
+		local normW = math.clamp(vs.X / math.max(1, cw), 0.05, 1)
+		local normH = math.clamp(vs.Y / math.max(1, ch), 0.05, 1)
+
+		local normX = 0.5 - (state.pan.X / math.max(1, cw)) - normW * 0.5
+		local normY = 0.5 - (state.pan.Y / math.max(1, ch)) - normH * 0.5
+
+		viewportBox.Position = UDim2.fromScale(math.clamp(normX, 0, 1 - normW), math.clamp(normY, 0, 1 - normH))
+		viewportBox.Size = UDim2.fromScale(normW, normH)
+
+		if state.me and state.me.capital and state.me.capital >= 0 then
+			local cx = (state.me.capital % state.w + 0.5) / state.w
+			local cy = (state.me.capital // state.w + 0.5) / state.h
+			capitalDot.Position = UDim2.fromScale(cx, cy)
+			capitalDot.Visible = true
+		else
+			capitalDot.Visible = false
+		end
+	end
+
+	radarView.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			local absPos = radarView.AbsolutePosition
+			local absSize = radarView.AbsoluteSize
+			local relX = math.clamp((input.Position.X - absPos.X) / absSize.X, 0, 1)
+			local relY = math.clamp((input.Position.Y - absPos.Y) / absSize.Y, 0, 1)
+			if state.w and state.h then
+				local cell = math.floor(relY * state.h) * state.w + math.floor(relX * state.w)
+				focusCell(cell)
+				playSound("ATTACK", 1.2, 0.3)
+			end
+		end
+	end)
+
+	state.updateRadar = updateRadar
+end
 
 -- Controles del mapa (como en los juegos de conquista):
 --   · Arrastrar con el botón izquierdo (o un dedo) mueve el mapa; un clic corto ataca / construye / elige.
@@ -3572,6 +3843,10 @@ do
 		if not n then
 			return
 		end
+		if ownerId == state.myId and (os.clock() - (state.lastPopSound or 0) > 0.16) then
+			state.lastPopSound = os.clock()
+			playSound("POP", 1.15 + math.random() * 0.15, 0.25)
+		end
 		local f = table.remove(front.free)
 		if not f then
 			f = Instance.new("Frame")
@@ -4439,6 +4714,7 @@ WorldStats.OnClientEvent:Connect(function(stats)
 	updateFronts(stats.fronts)
 	updateSpawnUI()
 	updatePlayerPings()
+	updateBuildings(stats.buildings)
 	-- Búsquedas rápidas para el tooltip y el ranking
 	state.statById = {}
 	for _, e in ipairs(stats.nations or {}) do
