@@ -595,6 +595,9 @@ function Engine:abandonTerritory(n)
 end
 
 function Engine:claimCountry(n, cell)
+	if n.eliminated then
+		return false, "Estás eliminado: solo puedes observar la partida"
+	end
 	if self.phase == "ENDED" then
 		return false, "La partida terminó"
 	end
@@ -650,6 +653,9 @@ function Engine:autoClaim(n)
 end
 
 function Engine:setSpawn(n, cell)
+	if n.eliminated then
+		return false, "Estás eliminado: solo puedes observar la partida"
+	end
 	if self.mode == "COUNTRIES" then
 		return self:claimCountry(n, cell)
 	end
@@ -1389,7 +1395,12 @@ function Engine:economyStep()
 				n.troops = 0
 				self:notify(nil, "💀 " .. n.name .. " fue eliminado")
 				if n.userId then
-					self:notify(n.userId, "💀 Has sido eliminado. Elige un nuevo punto de aparición")
+					-- Eliminado por las tropas rivales: pierde y solo puede observar la partida
+					n.eliminated = true
+					self:notify(
+						n.userId,
+						"💀 Has sido eliminado. Ahora eres espectador: observa cómo termina la partida"
+					)
 				end
 			else
 				local maxT = self:maxTroops(n)
@@ -1746,6 +1757,7 @@ function Engine:getMe(n)
 		cities = n.cities,
 		cells = n.cells,
 		alive = n.alive,
+		eliminated = n.eliminated == true,
 		spawned = n.spawned,
 		capital = n.capital,
 		defenseAI = n.defenseAI,

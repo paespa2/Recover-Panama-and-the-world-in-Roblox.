@@ -1667,7 +1667,7 @@ local function setEdge(bi, side, show, ownerId)
 		if not f then
 			f = Instance.new("Frame")
 			f.BorderSizePixel = 0
-			f.BackgroundTransparency = 0 -- sin transparencia: el color vivo debe verse pleno
+			f.BackgroundTransparency = 0.12 -- casi pleno pero suave: contorno fino y natural
 			f.ZIndex = 6
 			f.Parent = edgeLayer
 		end
@@ -1791,7 +1791,7 @@ local function recolorBlock(bi)
 		if state.useTiles then
 			r, g, bl = n.r or 200, n.g or 200, n.b or 200
 			-- Tú y los jugadores humanos se ven con más fuerza que los bots
-			transparency = if isMe then 0.4 elseif n.bot == false then 0.45 else 0.58
+			transparency = if isMe then 0.5 elseif n.bot == false then 0.55 else 0.68 -- fills suaves: el relieve se transparenta
 		else
 			local alpha = math.min(if isMe then 0.8 else 0.64, bestCount / (BLOCK * BLOCK) * 1.6)
 			r = r * (1 - alpha) + (n.r or 200) * alpha
@@ -2285,6 +2285,11 @@ end
 
 local function handleMapClick(cell)
 	if cell < 0 or cell >= (state.w * state.h) then
+		return
+	end
+
+	if state.me and state.me.eliminated then
+		showToast("💀 Estás eliminado: solo puedes observar la partida", Color3.fromRGB(255, 120, 120))
 		return
 	end
 
@@ -4188,9 +4193,37 @@ WorldStats.OnClientEvent:Connect(function(stats)
 	end
 end)
 
+-- Modo espectador: quien es eliminado por las tropas rivales pierde y solo puede observar la partida
+local spectatorBanner = Instance.new("TextLabel")
+spectatorBanner.Name = "SpectatorBanner"
+spectatorBanner.AnchorPoint = Vector2.new(0.5, 1)
+spectatorBanner.Position = UDim2.new(0.5, 0, 1, -16)
+spectatorBanner.Size = UDim2.fromOffset(460, 40)
+spectatorBanner.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
+spectatorBanner.BackgroundTransparency = 0.12
+spectatorBanner.BorderSizePixel = 0
+spectatorBanner.Font = Enum.Font.GothamBold
+spectatorBanner.Text = "💀 Has sido eliminado · Modo espectador"
+spectatorBanner.TextColor3 = Color3.fromRGB(255, 120, 120)
+spectatorBanner.TextSize = 15
+spectatorBanner.Visible = false
+spectatorBanner.ZIndex = 25
+spectatorBanner.Parent = root
+roundCorners(spectatorBanner, 10)
+
+local function setSpectator(on)
+	if spectatorBanner.Visible == on then
+		return
+	end
+	spectatorBanner.Visible = on
+	bottomHUD.Visible = not on
+	weaponBar.Visible = not on
+end
+
 WorldMe.OnClientEvent:Connect(function(meData)
 	local wasAlive = state.me and state.me.alive
 	state.me = meData
+	setSpectator(meData.eliminated == true)
 	updateSpawnUI()
 	updateWeaponCooldowns(meData.weapons)
 	if meData.autoMode and meData.autoMode ~= state.autoMode then
