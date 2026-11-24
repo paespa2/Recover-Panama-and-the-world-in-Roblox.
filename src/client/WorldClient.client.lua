@@ -4435,9 +4435,113 @@ WorldMe.OnClientEvent:Connect(function(meData)
 	goldCard.Text = string.format("💰 Oro: %d (+%d/s)", meData.gold or 0, math.floor((meData.goldRate or 0) + 0.5))
 end)
 
-WorldNotice.OnClientEvent:Connect(function(msg)
-	showToast(msg, Color3.fromRGB(255, 220, 50))
-end)
+-- FEED DE EVENTOS (estilo RoWorld): tarjetas a la izquierda; verde = logros, rojo = amenazas, morado = alianzas
+task.spawn(
+	function() -- el feed vive en su propia función: no consume variables locales del ámbito principal (límite 200)
+		local feedLayer = Instance.new("Frame")
+		feedLayer.Name = "EventFeed"
+		feedLayer.AnchorPoint = Vector2.new(1, 1)
+		feedLayer.Position = UDim2.new(1, -80, 1, -130)
+		feedLayer.Size = UDim2.fromOffset(310, 220)
+		feedLayer.BackgroundTransparency = 1
+		feedLayer.ZIndex = 26
+		feedLayer.Parent = root
+		local feedList = Instance.new("UIListLayout")
+		feedList.Padding = UDim.new(0, 4)
+		feedList.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		feedList.SortOrder = Enum.SortOrder.LayoutOrder
+		feedList.Parent = feedLayer
+
+		local FEED_MAX = 6
+		local FEED_SECONDS = 9
+		local feedOrder = 0
+
+		local function feedColor(text)
+			if
+				text:find("te está atacando")
+				or text:find("Has sido eliminado")
+				or text:find("TRAIDOR")
+				or text:find("rompió")
+			then
+				return Color3.fromRGB(230, 70, 70)
+			elseif text:find("Has eliminado") or text:find("🏆") or text:find("conquist") then
+				return Color3.fromRGB(60, 200, 120)
+			elseif text:find("alianza") or text:find("Alianza") then
+				return Color3.fromRGB(160, 130, 255)
+			end
+			return Color3.fromRGB(150, 160, 185)
+		end
+
+		local function pushFeed(text)
+			feedOrder += 1
+			local color = feedColor(text)
+			local card = Instance.new("Frame")
+			card.Size = UDim2.new(1, 0, 0, 30)
+			card.BackgroundColor3 = Color3.fromRGB(16, 22, 36)
+			card.BackgroundTransparency = 0.08
+			card.BorderSizePixel = 0
+			card.LayoutOrder = feedOrder
+			card.ZIndex = 27
+			card.Parent = feedLayer
+			roundCorners(card, 6)
+
+			local bar = Instance.new("Frame")
+			bar.Size = UDim2.new(0, 4, 1, 0)
+			bar.BackgroundColor3 = color
+			bar.BorderSizePixel = 0
+			bar.ZIndex = 28
+			bar.Parent = card
+			roundCorners(bar, 2)
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -16, 1, 0)
+			label.Position = UDim2.fromOffset(12, 0)
+			label.BackgroundTransparency = 1
+			label.Font = Enum.Font.GothamMedium
+			label.TextSize = 12
+			label.TextColor3 = Color3.fromRGB(235, 240, 252)
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.TextTruncate = Enum.TextTruncate.AtEnd
+			label.Text = text
+			label.ZIndex = 28
+			label.Parent = card
+
+			-- Máximo de tarjetas: se quita la más antigua
+			local cards = {}
+			for _, c in ipairs(feedLayer:GetChildren()) do
+				if c:IsA("Frame") then
+					table.insert(cards, c)
+				end
+			end
+			table.sort(cards, function(a, b)
+				return a.LayoutOrder < b.LayoutOrder
+			end)
+			while #cards > FEED_MAX do
+				table.remove(cards, 1):Destroy()
+			end
+
+			task.delay(FEED_SECONDS, function()
+				if card.Parent then
+					TweenService:Create(card, TweenInfo.new(0.5), { BackgroundTransparency = 1 }):Play()
+					TweenService:Create(label, TweenInfo.new(0.5), { TextTransparency = 1 }):Play()
+					TweenService:Create(bar, TweenInfo.new(0.5), { BackgroundTransparency = 1 }):Play()
+					task.delay(0.55, function()
+						card:Destroy()
+					end)
+				end
+			end)
+		end
+
+		WorldNotice.OnClientEvent:Connect(function(msg)
+			-- Los avisos de error ("⚠️") siguen saliendo como aviso central; el resto va al feed
+			if msg:sub(1, 2) == "⚠" or msg:find("^⚠") then
+				showToast(msg, Color3.fromRGB(255, 220, 50))
+			else
+				pushFeed(msg)
+			end
+		end)
+	end
+)
 
 -- La partida empieza cuando el jugador pulsa JUGAR en la pantalla de lobby (ver LobbyScreen).
 

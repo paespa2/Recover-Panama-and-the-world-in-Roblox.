@@ -896,6 +896,14 @@ function Engine:launchAttack(n, targetId, ratio, targetCell)
 		end
 		table.insert(n.attacks, atk)
 	end
+	-- Aviso al jugador atacado (una vez por agresor y ataque nuevo): "¡X (42.4K) te está atacando!"
+	if not existing and targetId ~= 0 then
+		local tn = self.nations[targetId]
+		if tn and tn.userId then
+			local k = if troops >= 1000 then string.format("%.1fK", troops / 1000) else tostring(troops)
+			self:notify(tn.userId, string.format("🔴 ¡%s (%s) te está atacando!", n.name, k))
+		end
+	end
 	atk.troops += troops
 	n.troops -= troops
 	return true
@@ -1658,6 +1666,17 @@ function Engine:economyStep()
 				self:retreat(n)
 				n.troops = 0
 				self:notify(nil, "💀 " .. n.name .. " fue eliminado")
+				-- Quien lo atacó más recientemente se lleva el mérito
+				local killer, killerTime = nil, -math.huge
+				for attackerId, t in pairs(n.attackedBy) do
+					local a = self.nations[attackerId]
+					if a and a.userId and t > killerTime then
+						killer, killerTime = a, t
+					end
+				end
+				if killer then
+					self:notify(killer.userId, "✅ Has eliminado a " .. n.name)
+				end
 				if n.userId then
 					-- Eliminado por las tropas rivales: pierde y solo puede observar la partida
 					n.eliminated = true
