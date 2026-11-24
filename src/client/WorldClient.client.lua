@@ -2308,6 +2308,28 @@ local function handleMapClick(cell)
 		return
 	end
 
+	-- Modo alianza: el clic propone (o rompe) una alianza con la nación dueña de esa celda
+	if state.allyMode then
+		state.allyMode = false
+		local btn = gui:FindFirstChild("BtnAlly", true)
+		if btn then
+			btn.BackgroundColor3 = Color3.fromRGB(70, 60, 130)
+		end
+		local targetId = buffer.readu8(state.owner, cell)
+		if targetId == 0 or targetId == state.myId then
+			showToast("🤝 Haz clic sobre el territorio de otra nación", Color3.fromRGB(255, 200, 80))
+			return
+		end
+		local isAlly = false
+		for _, id in ipairs(state.me and state.me.ally and state.me.ally.allies or {}) do
+			if id == targetId then
+				isAlly = true
+			end
+		end
+		WorldCommand:FireServer({ a = if isAlly then "ALLY_BREAK" else "ALLY_REQUEST", target = targetId })
+		return
+	end
+
 	-- Fase de Batalla
 	if state.actionMode == "ATTACK" then
 		WorldCommand:FireServer({ a = "ATTACK", cell = cell, ratio = state.attackRatio })
@@ -3955,7 +3977,7 @@ WorldRoster.OnClientEvent:Connect(function(entry)
 	updateMarkers()
 end)
 
-WorldDiff.OnClientEvent:Connect(function(diffBuf)
+local function applyDiff(diffBuf)
 	-- Mientras se crean los bloques solo se anotan los dueños (el dibujado completo llega después)
 	if state.owner and state.blockBuilding then
 		for i = 0, math.floor(buffer.len(diffBuf) / 4) - 1 do
@@ -4019,6 +4041,34 @@ WorldDiff.OnClientEvent:Connect(function(diffBuf)
 	end
 
 	flushImage()
+end
+
+-- Suavizado: el servidor manda un lote cada 0,2 s. Si es grande se reparte en 4 trozos a lo largo de ese intervalo
+-- para que el territorio crezca de forma continua en vez de aparecer de golpe.
+local DIFF_SLICES = 4
+local DIFF_SLICE_DELAY = 0.05
+WorldDiff.OnClientEvent:Connect(function(diffBuf)
+	local count = math.floor(buffer.len(diffBuf) / 4)
+	if count < 40 or state.blockBuilding or not state.animReady then
+		applyDiff(diffBuf)
+		return
+	end
+	local per = math.ceil(count / DIFF_SLICES)
+	for s = 0, DIFF_SLICES - 1 do
+		local first = s * per
+		local n = math.min(per, count - first)
+		if n > 0 then
+			local slice = buffer.create(n * 4)
+			buffer.copy(slice, 0, diffBuf, first * 4, n * 4)
+			if s == 0 then
+				applyDiff(slice)
+			else
+				task.delay(s * DIFF_SLICE_DELAY, function()
+					applyDiff(slice)
+				end)
+			end
+		end
+	end
 end)
 
 WorldStats.OnClientEvent:Connect(function(stats)
@@ -4245,6 +4295,104 @@ local function updateAttackPill(meData)
 	end
 end
 
+-- ----------------------------------------------------------------------------
+-- ALIANZAS: botón "🤝 Alianza" (luego clic en el territorio de una nación para proponer o romper) y tarjetas de
+-- solicitudes entrantes con Aceptar / Rechazar
+-- ----------------------------------------------------------------------------
+local btnAlly = Instance.new("TextButton")
+btnAlly.Name = "BtnAlly"
+btnAlly.AnchorPoint = Vector2.new(1, 0.5)
+btnAlly.Position = UDim2.new(1, -386, 0.5, 0)
+btnAlly.Size = UDim2.fromOffset(110, 34)
+btnAlly.BackgroundColor3 = Color3.fromRGB(70, 60, 130)
+btnAlly.Font = Enum.Font.GothamBold
+btnAlly.Text = "🤝 Alianza"
+btnAlly.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnAlly.TextSize = 12
+btnAlly.BorderSizePixel = 0
+btnAlly.ZIndex = 21
+btnAlly.Parent = topBar
+roundCorners(btnAlly, 6)
+
+btnAlly.MouseButton1Click:Connect(function()
+	state.allyMode = not state.allyMode
+	btnAlly.BackgroundColor3 = if state.allyMode then Color3.fromRGB(150, 120, 255) else Color3.fromRGB(70, 60, 130)
+	if state.allyMode then
+		state.showToast(
+			"🤝 Haz clic en el territorio de una nación: propones alianza (o la rompes si ya sois aliados)",
+			Color3.fromRGB(180, 160, 255)
+		)
+	end
+end)
+
+local allyCards = Instance.new("Frame")
+allyCards.Name = "AllyCards"
+allyCards.AnchorPoint = Vector2.new(0.5, 0)
+allyCards.Position = UDim2.new(0.5, 0, 0, 108)
+allyCards.Size = UDim2.fromOffset(380, 200)
+allyCards.BackgroundTransparency = 1
+allyCards.ZIndex = 26
+allyCards.Parent = root
+local allyLayout = Instance.new("UIListLayout")
+allyLayout.Padding = UDim.new(0, 6)
+allyLayout.Parent = allyCards
+
+local function updateAllyCards(meData)
+	local info = meData.ally
+	local requests = info and info.requests or {}
+	for _, c in ipairs(allyCards:GetChildren()) do
+		if c:IsA("Frame") then
+			c:Destroy()
+		end
+	end
+	for i, req in ipairs(requests) do
+		if i > 3 then
+			break
+		end
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, 0, 0, 58)
+		card.BackgroundColor3 = Color3.fromRGB(22, 28, 46)
+		card.BackgroundTransparency = 0.05
+		card.BorderSizePixel = 0
+		card.ZIndex = 27
+		card.Parent = allyCards
+		roundCorners(card, 8)
+
+		local title = Instance.new("TextLabel")
+		title.Size = UDim2.new(1, -12, 0, 22)
+		title.Position = UDim2.fromOffset(8, 4)
+		title.BackgroundTransparency = 1
+		title.Font = Enum.Font.GothamBold
+		title.TextSize = 12
+		title.TextColor3 = Color3.fromRGB(235, 240, 255)
+		title.TextXAlignment = Enum.TextXAlignment.Left
+		title.Text = string.format("🤝 %s propone una alianza (%ds)", req.name, req.left)
+		title.ZIndex = 28
+		title.Parent = card
+
+		local function makeButton(text, x, color, action)
+			local b = Instance.new("TextButton")
+			b.Size = UDim2.fromOffset(110, 24)
+			b.Position = UDim2.fromOffset(x, 30)
+			b.BackgroundColor3 = color
+			b.Font = Enum.Font.GothamBold
+			b.TextSize = 12
+			b.TextColor3 = Color3.new(1, 1, 1)
+			b.Text = text
+			b.BorderSizePixel = 0
+			b.ZIndex = 28
+			b.Parent = card
+			roundCorners(b, 6)
+			b.MouseButton1Click:Connect(function()
+				WorldCommand:FireServer({ a = action, target = req.from })
+				card:Destroy()
+			end)
+		end
+		makeButton("Aceptar", 8, Color3.fromRGB(40, 150, 90), "ALLY_ACCEPT")
+		makeButton("Rechazar", 126, Color3.fromRGB(150, 60, 60), "ALLY_DECLINE")
+	end
+end
+
 local function setSpectator(on)
 	if spectatorBanner.Visible == on then
 		return
@@ -4259,6 +4407,7 @@ WorldMe.OnClientEvent:Connect(function(meData)
 	state.me = meData
 	setSpectator(meData.eliminated == true)
 	updateAttackPill(meData)
+	updateAllyCards(meData)
 	updateSpawnUI()
 	updateWeaponCooldowns(meData.weapons)
 	if meData.autoMode and meData.autoMode ~= state.autoMode then
