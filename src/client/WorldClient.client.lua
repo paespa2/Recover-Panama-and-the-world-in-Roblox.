@@ -1033,7 +1033,11 @@ do
 			if stroke and ownerNation and ownerNation.color then
 				stroke.Color = ownerNation.color
 			end
-			f.Visible = true
+			local isMyOrSilo = (b.owner == state.myId) or (b.kind == "Silo")
+			f:SetAttribute("MyOrSilo", isMyOrSilo)
+			local rel = state.zoom / math.max(0.01, state.fit or state.zoom)
+			local show = (rel >= 1.35) or isMyOrSilo
+			f.Visible = show
 		end
 
 		for cell, f in pairs(buildingFrames) do
@@ -1217,9 +1221,9 @@ state.updateFronts = updateFronts
 -- los demás jugadores del servidor entran a la partida en curso.
 -- ============================================================================
 local selPlanet = "EARTH"
-local selBots = 40
+local selBots = 35
 local selDiff = "NORMAL"
-local selMode = "COUNTRIES"
+local selMode = "FREE"
 
 local COLOR_CARD = Color3.fromRGB(26, 36, 56)
 local COLOR_CARD_SEL = Color3.fromRGB(24, 70, 96)
@@ -1322,24 +1326,25 @@ lobbyLabel("MODO DE JUEGO", UDim2.fromOffset(28, 96), UDim2.fromOffset(440, 18),
 
 local MODES = {
 	{
-		id = "COUNTRIES",
-		icon = "🏳️",
-		name = "PAÍSES VS PAÍSES",
-		desc = "Elige un país real y conquista el mundo. Ideal para jugar con amigos.",
-		tag = "RECOMENDADO",
-	},
-	{
 		id = "FREE",
 		icon = "🌐",
-		name = "LIBRE",
-		desc = "Aparece donde quieras en el mapa y expándete desde cero.",
+		name = "FRONTWARS FFA",
+		desc = "Inicio 100% igualitario (1.5K tropas, 10K capacidad). Elige tu capital y conquista el mundo neutral.",
+		tag = "COMPETITIVO",
+	},
+	{
+		id = "COUNTRIES",
+		icon = "🏳️",
+		name = "HISTÓRICO ASIMÉTRICO",
+		desc = "Fronteras reales de la historia (Rusia gigante, Panamá pequeño). Desafío asimétrico no competitivo.",
+		tag = "DESAFÍO",
 	},
 	{
 		id = "CONTINENTS",
 		icon = "🧭",
 		name = "CONTINENTES",
 		desc = "Cada continente es un equipo: los aliados no se atacan. Gana el equipo con más del 55 % de la tierra.",
-		tag = "NUEVO",
+		tag = "POR EQUIPOS",
 	},
 }
 
@@ -1639,7 +1644,7 @@ for _, n in ipairs(BOT_COUNTS) do
 	end)
 end
 
-local MODE_NAMES = { COUNTRIES = "Países vs Países", CONTINENTS = "Continentes", FREE = "Libre" }
+local MODE_NAMES = { FREE = "FrontWars FFA (Competitivo)", COUNTRIES = "Histórico Asimétrico", CONTINENTS = "Continentes" }
 local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
 
 function updateLobbyStatus()
@@ -2372,6 +2377,13 @@ local function applyLabelZoom()
 				m.troops.Position = UDim2.fromOffset(0, ds / 2 + 2)
 			end
 		end
+	end
+
+	for cell, f in pairs(buildingFrames) do
+		local cx, cy = cell % w, cell // w
+		local inView = (cx >= x0 and cx <= x1 and cy >= y0 and cy <= y1)
+		local isMyOrSilo = f:GetAttribute("MyOrSilo") == true
+		f.Visible = inView and ((rel >= 1.35) or isMyOrSilo)
 	end
 end
 
@@ -3569,15 +3581,15 @@ local function updateSpawnUI()
 	local countries = state.mode == "COUNTRIES"
 	local placed = state.me ~= nil and state.me.alive == true
 	local left = s.spawnTimer or 0
-	bannerTitle.Text = if countries then "🌍 ELIGE TU PAÍS" else "📍 ELIGE TU UBICACIÓN INICIAL"
+	bannerTitle.Text = if countries then "🏳️ HISTÓRICO: ELIGE TU PAÍS" else "🌐 FRONTWARS FFA: ELIGE TU CAPITAL"
 	if countries then
 		bannerSub.Text = if placed
 			then "Ya tienes país. Puedes cambiarlo haciendo clic en otro hasta que acabe el tiempo."
 			else "Haz clic sobre un país del mapa o elígelo en la lista (botón 🌍 Países). Los 🔒 ya tienen jugador."
 	else
 		bannerSub.Text = if placed
-			then "Ubicación fijada. Haz clic en otro punto libre para cambiarla antes de que acabe el tiempo."
-			else "Haz clic en cualquier terreno libre para colocar tu capital. El círculo verde indica que cabe; rojo, que está ocupado."
+			then "Capital fijada. Todos inician con 1.5K tropas y 10K capacidad igualitaria. Puedes cambiarla antes de que acabe el tiempo."
+			else "Haz clic en el mapa para colocar tu base capital. ¡Todos los jugadores inician con 1.5K tropas y 10K capacidad igualitaria!"
 	end
 	bannerTime.Text = "⏱ " .. left .. "s"
 	bannerBar.Size = UDim2.fromScale(math.clamp(left / math.max(1, s.spawnTotal or 25), 0, 1), 1)

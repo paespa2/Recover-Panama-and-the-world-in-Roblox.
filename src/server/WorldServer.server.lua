@@ -37,7 +37,7 @@ local WorldRoster = remote("WorldRoster") -- una nación nueva (jugador que entr
 local WorldFx = remote("WorldFx") -- efectos visuales de las armas (explosiones, terremotos...)
 
 local engine = nil
-local config = { planet = "EARTH", bots = 40, difficulty = "NORMAL", mode = "FREE" }
+local config = { planet = "EARTH", bots = 35, difficulty = "NORMAL", mode = "FREE" }
 local humanNations = {} -- [Player] = nación
 local lastCommand = {}
 local endedAt = nil
