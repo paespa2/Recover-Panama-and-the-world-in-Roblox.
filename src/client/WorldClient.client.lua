@@ -112,7 +112,16 @@ local state = {
 	blockW = 0,
 	blockH = 0,
 	dirtyBlocks = {},
+	dirtyRect = { x0 = math.huge, y0 = math.huge, x1 = -1, y1 = -1 },
+	hasDirty = false,
 }
+
+-- Referencias de UIScale responsivo automático (1080p / 720p / Móvil)
+local radarScale = nil
+local zoomScale = nil
+local spawnScale = nil
+local modalScale = nil
+local topBarScale = nil
 
 -- ============================================================================
 -- CREACIÓN DE INTERFAZ DE USUARIO
@@ -321,6 +330,9 @@ tacticalModal.ZIndex = 85
 tacticalModal.Visible = false
 tacticalModal.Parent = root
 roundCorners(tacticalModal, 12)
+
+modalScale = Instance.new("UIScale")
+modalScale.Parent = tacticalModal
 
 local modalStroke = Instance.new("UIStroke")
 modalStroke.Color = Color3.fromRGB(45, 75, 120)
@@ -2108,10 +2120,12 @@ local flashCount = 0
 -- Tu contorno es dorado y late. Con mucho zoom se usa el borde celda por celda del nivel de detalle.
 -- ----------------------------------------------------------------------------
 -- ============================================================================
--- FRONTERAS DE PÍXELES FINOS OPTIMIZADAS (VIEWPORT CULLING ESTILO FRONTWARS)
+-- RENDERIZADO DE FRONTERAS ILUMINADAS (2 PASADAS ESTILO FRONTWARS)
+-- Pasada 1: Halo exterior de resplandor neón difuso (Bloom / Glow)
+-- Pasada 2: Núcleo central brillante de alta saturación (Crisp Laser Core)
 -- ============================================================================
 local edgeLayer = Instance.new("Frame")
-edgeLayer.Name = "PixelEdgeLayer"
+edgeLayer.Name = "IlluminatedBorderLayer"
 edgeLayer.Size = UDim2.fromScale(1, 1)
 edgeLayer.BackgroundTransparency = 1
 edgeLayer.BorderSizePixel = 0
@@ -2119,19 +2133,32 @@ edgeLayer.Visible = true
 edgeLayer.ZIndex = 6
 edgeLayer.Parent = mapCanvas
 
-local MAX_VISIBLE_EDGES = 350
-local edgeFrames = {}
-local myEdges = {}
-local LINE_THICK_PX = 1.5
+local MAX_VISIBLE_EDGES = 600
+local edgeGlowFrames = {} -- Pasada 1 (Bloom / Resplandor)
+local edgeCoreFrames = {} -- Pasada 2 (Núcleo nítido de alta definición)
+local myGlowEdges = {}
+local myCoreEdges = {}
+local GLOW_THICK_PX = 4.5
+local CORE_THICK_PX = 1.6
 
--- Pre-instanciamos el pool fijo de frames (máximo 350 para 60 FPS garantizados)
 for i = 1, MAX_VISIBLE_EDGES do
-	local f = Instance.new("Frame")
-	f.BorderSizePixel = 0
-	f.ZIndex = 6
-	f.Visible = false
-	f.Parent = edgeLayer
-	edgeFrames[i] = f
+	local fg = Instance.new("Frame")
+	fg.Name = "Glow"
+	fg.BorderSizePixel = 0
+	fg.ZIndex = 6
+	fg.Visible = false
+	fg.BackgroundTransparency = 0.55
+	fg.Parent = edgeLayer
+	edgeGlowFrames[i] = fg
+
+	local fc = Instance.new("Frame")
+	fc.Name = "Core"
+	fc.BorderSizePixel = 0
+	fc.ZIndex = 7
+	fc.Visible = false
+	fc.BackgroundTransparency = 0.0
+	fc.Parent = edgeLayer
+	edgeCoreFrames[i] = fc
 end
 
 local function sameTeam(a, b)
@@ -2146,16 +2173,16 @@ state.sameTeam = sameTeam
 local function vividColor(c, id)
 	local h, s = c:ToHSV()
 	local k = ((id or 0) * 37) % 100 / 100
-	local sat = math.clamp(s * 1.45, 0.55, 0.9) + (k - 0.5) * 0.12
-	local val = 0.9 + k * 0.1
-	local hue = (h + (k - 0.5) * 0.04) % 1
-	return Color3.fromHSV(hue, math.clamp(sat, 0.45, 0.95), math.clamp(val, 0.85, 1))
+	local sat = math.clamp(s * 1.5, 0.65, 0.95)
+	local val = 0.95 + k * 0.05
+	local hue = (h + (k - 0.5) * 0.03) % 1
+	return Color3.fromHSV(hue, math.clamp(sat, 0.6, 1.0), math.clamp(val, 0.9, 1))
 end
 state.vividColor = vividColor
 
 local function edgeColor(ownerId)
 	if ownerId == state.myId then
-		return Color3.fromRGB(255, 235, 60)
+		return Color3.fromRGB(255, 235, 50)
 	end
 	local n = state.rosterById[ownerId]
 	if n and n.color then
@@ -2164,7 +2191,7 @@ local function edgeColor(ownerId)
 	return Color3.new(1, 1, 1)
 end
 
--- Actualiza los bordes visibles SOLO dentro de la pantalla del jugador (Viewport Culling)
+-- Actualiza los bordes iluminados visibles dentro del viewport (2 pasadas)
 local function refreshVisibleEdges()
 	local owner = state.owner
 	local w, h = state.w, state.h
@@ -2173,13 +2200,6 @@ local function refreshVisibleEdges()
 		return
 	end
 
-	local rel = state.zoom / (state.fit or state.zoom)
-	-- Con zoom alejado (mapa entero) las líneas de 1px causan lag y aliasing; los bloques bastan
-	if rel < 1.25 then
-		edgeLayer.Visible = false
-		table.clear(myEdges)
-		return
-	end
 	edgeLayer.Visible = true
 
 	local vs = mapContainer.AbsoluteSize
@@ -2189,6 +2209,10 @@ local function refreshVisibleEdges()
 		return
 	end
 
+	local rel = state.zoom / (state.fit or state.zoom)
+	local isFar = rel < 1.15
+	local step = if isFar then 2 else 1 -- Muestreo adaptativo para mantener 60 FPS fijos a cualquier zoom
+
 	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
 	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
 	local x0 = math.clamp(math.floor(-left / cellW) - 1, 0, w - 1)
@@ -2196,31 +2220,49 @@ local function refreshVisibleEdges()
 	local y0 = math.clamp(math.floor(-top / cellH) - 1, 0, h - 1)
 	local y1 = math.clamp(math.ceil((vs.Y - top) / cellH) + 1, 0, h - 1)
 
-	table.clear(myEdges)
+	table.clear(myGlowEdges)
+	table.clear(myCoreEdges)
 	local edgeCount = 0
 
-	for y = y0, y1 do
+	for y = y0, y1, step do
 		local row = y * w
-		for x = x0, x1 do
+		for x = x0, x1, step do
 			local cell = row + x
 			local o = buffer.readu8(owner, cell)
 			if o ~= 0 then
-				local r = buffer.readu8(owner, row + (if x == w - 1 then 0 else x + 1))
+				local r = buffer.readu8(owner, row + (if x >= w - 1 then 0 else x + 1))
 				local d = if y < h - 1 then buffer.readu8(owner, (y + 1) * w + x) else 0
+				local col = edgeColor(o)
+				local coreCol = if o == state.myId then Color3.fromRGB(255, 255, 230) else col:Lerp(Color3.new(1, 1, 1), 0.35)
+				local isMe = (o == state.myId)
 
 				-- Borde derecho
 				if r ~= o and not sameTeam(r, o) then
 					edgeCount += 1
 					if edgeCount <= MAX_VISIBLE_EDGES then
-						local f = edgeFrames[edgeCount]
-						f.AnchorPoint = Vector2.new(0.5, 0)
-						f.Position = UDim2.fromScale((x + 1) / w, y / h)
-						f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
-						f.BackgroundColor3 = edgeColor(o)
-						f.BackgroundTransparency = 0.05
-						f.Visible = true
-						if o == state.myId then
-							myEdges[f] = true
+						local fg = edgeGlowFrames[edgeCount]
+						local fc = edgeCoreFrames[edgeCount]
+						local pos = UDim2.fromScale((x + 1) / w, y / h)
+						local gSize = UDim2.new(0, if isMe then 5.5 else GLOW_THICK_PX, step / h, 0)
+						local cSize = UDim2.new(0, CORE_THICK_PX, step / h, 0)
+
+						fg.AnchorPoint = Vector2.new(0.5, 0)
+						fg.Position = pos
+						fg.Size = gSize
+						fg.BackgroundColor3 = col
+						fg.BackgroundTransparency = if isMe then 0.38 else 0.55
+						fg.Visible = true
+
+						fc.AnchorPoint = Vector2.new(0.5, 0)
+						fc.Position = pos
+						fc.Size = cSize
+						fc.BackgroundColor3 = coreCol
+						fc.BackgroundTransparency = 0.0
+						fc.Visible = true
+
+						if isMe then
+							myGlowEdges[fg] = true
+							myCoreEdges[fc] = true
 						end
 					end
 				end
@@ -2229,15 +2271,29 @@ local function refreshVisibleEdges()
 				if d ~= o and not sameTeam(d, o) then
 					edgeCount += 1
 					if edgeCount <= MAX_VISIBLE_EDGES then
-						local f = edgeFrames[edgeCount]
-						f.AnchorPoint = Vector2.new(0, 0.5)
-						f.Position = UDim2.fromScale(x / w, (y + 1) / h)
-						f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
-						f.BackgroundColor3 = edgeColor(o)
-						f.BackgroundTransparency = 0.05
-						f.Visible = true
-						if o == state.myId then
-							myEdges[f] = true
+						local fg = edgeGlowFrames[edgeCount]
+						local fc = edgeCoreFrames[edgeCount]
+						local pos = UDim2.fromScale(x / w, (y + 1) / h)
+						local gSize = UDim2.new(step / w, 0, 0, if isMe then 5.5 else GLOW_THICK_PX)
+						local cSize = UDim2.new(step / w, 0, 0, CORE_THICK_PX)
+
+						fg.AnchorPoint = Vector2.new(0, 0.5)
+						fg.Position = pos
+						fg.Size = gSize
+						fg.BackgroundColor3 = col
+						fg.BackgroundTransparency = if isMe then 0.38 else 0.55
+						fg.Visible = true
+
+						fc.AnchorPoint = Vector2.new(0, 0.5)
+						fc.Position = pos
+						fc.Size = cSize
+						fc.BackgroundColor3 = coreCol
+						fc.BackgroundTransparency = 0.0
+						fc.Visible = true
+
+						if isMe then
+							myGlowEdges[fg] = true
+							myCoreEdges[fc] = true
 						end
 					end
 				end
@@ -2254,7 +2310,8 @@ local function refreshVisibleEdges()
 
 	-- Ocultar frames sobrantes del pool
 	for i = edgeCount + 1, MAX_VISIBLE_EDGES do
-		edgeFrames[i].Visible = false
+		edgeGlowFrames[i].Visible = false
+		edgeCoreFrames[i].Visible = false
 	end
 end
 
@@ -2262,24 +2319,29 @@ state.refreshEdges = refreshVisibleEdges
 state.rebuildEdges = refreshVisibleEdges
 
 local function updateCellEdges(cell)
-	-- Viewport Culling gestionado eficientemente en refreshVisibleEdges
 end
 
--- El contorno del jugador late con resplandor dorado (solo en frames activos)
+-- El contorno iluminado del jugador late con resplandor neón dorado
 local edgePulseAcc = 0
 RunService.Heartbeat:Connect(function(dt)
 	edgePulseAcc += dt
-	if edgePulseAcc < 0.15 then
+	if edgePulseAcc < 0.1 then
 		return
 	end
 	edgePulseAcc = 0
 	if not edgeLayer.Visible then
 		return
 	end
-	local k = (math.sin(os.clock() * 4) + 1) / 2
-	local c = Color3.fromRGB(255, 215, 40):Lerp(Color3.fromRGB(255, 255, 240), k)
-	for f in pairs(myEdges) do
-		f.BackgroundColor3 = c
+	local k = (math.sin(os.clock() * 5) + 1) / 2
+	local glowColor = Color3.fromRGB(255, 215, 30):Lerp(Color3.fromRGB(255, 245, 100), k)
+	local coreColor = Color3.fromRGB(255, 255, 200):Lerp(Color3.fromRGB(255, 255, 255), k)
+	local glowAlpha = 0.30 + k * 0.20
+	for fg in pairs(myGlowEdges) do
+		fg.BackgroundColor3 = glowColor
+		fg.BackgroundTransparency = glowAlpha
+	end
+	for fc in pairs(myCoreEdges) do
+		fc.BackgroundColor3 = coreColor
 	end
 end)
 
@@ -2341,8 +2403,18 @@ end
 
 local function markBlockDirty(idx)
 	local w = state.w
-	local bi = ((idx // w) // BLOCK) * state.blockW + ((idx % w) // BLOCK) + 1
+	local bx = (idx % w) // BLOCK
+	local by = (idx // w) // BLOCK
+	local bi = by * state.blockW + bx + 1
 	state.dirtyBlocks[bi] = true
+	local dr = state.dirtyRect
+	if dr then
+		if bx < dr.x0 then dr.x0 = bx end
+		if bx > dr.x1 then dr.x1 = bx end
+		if by < dr.y0 then dr.y0 = by end
+		if by > dr.y1 then dr.y1 = by end
+	end
+	state.hasDirty = true
 end
 
 local function initEditableImage(w, h)
@@ -2489,11 +2561,22 @@ local fullRedraw -- declarada aquí porque flushImage la usa al cambiar al modo 
 
 local function flushImage()
 	if state.blockMode then
+		if not state.hasDirty and not next(state.dirtyBlocks) then
+			return
+		end
 		for bi in pairs(state.dirtyBlocks) do
 			recolorBlock(bi)
 			state.dirtyBlocks[bi] = nil
 		end
-		state.detailDirty = true -- el nivel de detalle celda por celda se refresca con los cambios
+		if state.dirtyRect then
+			state.dirtyRect.x0, state.dirtyRect.y0 = math.huge, math.huge
+			state.dirtyRect.x1, state.dirtyRect.y1 = -1, -1
+		end
+		state.hasDirty = false
+		state.detailDirty = true
+		if state.refreshEdges then
+			state.refreshEdges()
+		end
 		return
 	end
 	if state.editableImage and state.pixelBuffer then
@@ -3113,6 +3196,8 @@ do
 	radarCard.ZIndex = 30
 	radarCard.Parent = root
 	roundCorners(radarCard, 8)
+	radarScale = Instance.new("UIScale")
+	radarScale.Parent = radarCard
 
 	local radarStroke = Instance.new("UIStroke")
 	radarStroke.Thickness = 1.5
@@ -3537,6 +3622,8 @@ zoomBar.Size = UDim2.fromOffset(40, 178) -- 4 botones de 40 px con 6 px de separ
 zoomBar.BackgroundTransparency = 1
 zoomBar.ZIndex = 25
 zoomBar.Parent = root
+zoomScale = Instance.new("UIScale")
+zoomScale.Parent = zoomBar
 
 local zoomBarLayout = Instance.new("UIListLayout")
 zoomBarLayout.Padding = UDim.new(0, 6)
@@ -3853,6 +3940,8 @@ spawnBanner.BorderSizePixel = 0
 spawnBanner.Visible = false
 spawnBanner.ZIndex = 40
 spawnBanner.Parent = root
+spawnScale = Instance.new("UIScale")
+spawnScale.Parent = spawnBanner
 
 local spawnBannerCorner = Instance.new("UICorner")
 spawnBannerCorner.CornerRadius = UDim.new(0, 12)
@@ -4786,18 +4875,50 @@ countryConfirmCorner.Parent = countryConfirm
 local countryScale = Instance.new("UIScale")
 countryScale.Parent = countryPanel
 
+-- ============================================================================
+-- CONTROLADOR DE ESCALADO RESPONSIVO UISCALE (1080p / 720p / Móvil Automático)
+-- ============================================================================
 local function fitUI()
 	local vs = root.AbsoluteSize
 	if vs.X <= 0 or vs.Y <= 0 then
 		return
 	end
-	local s = math.clamp(math.min(vs.X / 1100, vs.Y / 700), 0.5, 1.1)
+
+	-- Modos de resolución de calidad táctica:
+	-- 1080p Desktop: vs.X >= 1500 or vs.Y >= 820 -> Escala 1.0 a 1.20
+	-- 720p Laptop / Tablet: vs.X entre 1000 y 1500 -> Escala 0.78 a 0.95
+	-- Móvil / Ventana pequeña: vs.X < 1000 or vs.Y < 580 -> Escala 0.52 a 0.75
+	local s = 1.0
+	if vs.X >= 1500 and vs.Y >= 820 then
+		s = math.clamp(math.min(vs.X / 1920, vs.Y / 1080) * 1.08, 0.95, 1.20)
+	elseif vs.X >= 1000 and vs.Y >= 600 then
+		s = math.clamp(math.min(vs.X / 1350, vs.Y / 760), 0.78, 0.95)
+	else
+		s = math.clamp(math.min(vs.X / 960, vs.Y / 540), 0.52, 0.75)
+	end
+
 	hudScale.Scale = s
 	leaderScale.Scale = s
 	countryScale.Scale = s
-	-- La altura se calcula en píxeles "sin escala" para que el panel llene el espacio libre sin desbordar
+	if radarScale then radarScale.Scale = s end
+	if zoomScale then zoomScale.Scale = s end
+	if spawnScale then spawnScale.Scale = s end
+	if modalScale then modalScale.Scale = s end
+
+	-- En pantallas estrechas (móviles / 720p) adaptamos botones para evitar solapamiento
+	local isCompact = vs.X < 1180 or s < 0.82
+	titleLabel.Visible = vs.X >= 1180
+	if isCompact then
+		btnTactical.Text = "⚙️ H"
+		btnTactical.Size = UDim2.fromOffset(56, 32)
+		btnTactical.Position = UDim2.new(1, -380, 0.5, 0)
+	else
+		btnTactical.Text = "⚙️ Táctica (H)"
+		btnTactical.Size = UDim2.fromOffset(116, 34)
+		btnTactical.Position = UDim2.new(1, -506, 0.5, 0)
+	end
+
 	countryPanel.Size = UDim2.fromOffset(290, math.max(220, (vs.Y - 210) / s))
-	titleLabel.Visible = vs.X >= 1180 -- en pantallas estrechas el título chocaría con los botones
 end
 root:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitUI)
 fitUI()
