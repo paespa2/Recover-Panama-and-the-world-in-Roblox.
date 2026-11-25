@@ -220,11 +220,37 @@ local HUMAN_COLORS = {
 	Color3.fromRGB(255, 255, 255),
 }
 
+local FRONTWARS_PALETTE = {
+	Color3.fromRGB(74, 168, 255),  -- Sky Blue (estilo Mexico FW)
+	Color3.fromRGB(112, 196, 144), -- Mint Green (verde FW clásico)
+	Color3.fromRGB(245, 95, 85),   -- Coral Crimson
+	Color3.fromRGB(250, 195, 55),  -- Amber Gold
+	Color3.fromRGB(168, 115, 245), -- Pastel Violet
+	Color3.fromRGB(255, 140, 55),  -- Tangerine Orange
+	Color3.fromRGB(245, 110, 175), -- Candy Pink
+	Color3.fromRGB(45, 205, 215),  -- Turquoise / Teal
+	Color3.fromRGB(145, 215, 60),  -- Lime Green
+	Color3.fromRGB(100, 145, 245), -- Cornflower Blue
+	Color3.fromRGB(235, 165, 80),  -- Sandy Peach
+	Color3.fromRGB(195, 125, 235), -- Lavender
+	Color3.fromRGB(80, 195, 175),  -- Seafoam
+	Color3.fromRGB(240, 80, 115),  -- Raspberry
+	Color3.fromRGB(215, 195, 55),  -- Yellow Ochre
+	Color3.fromRGB(120, 170, 235), -- Steel Blue
+	Color3.fromRGB(255, 110, 80),  -- Bright Salmon
+	Color3.fromRGB(60, 220, 160),  -- Spring Green
+	Color3.fromRGB(190, 95, 245),  -- Deep Orchid
+	Color3.fromRGB(255, 175, 45),  -- Bright Marigold
+}
+
 local function botColor(i)
+	if i <= #FRONTWARS_PALETTE then
+		return FRONTWARS_PALETTE[i]
+	end
 	local hue = (i * 0.61803398875) % 1
-	local sat = 0.38 + ((i * 7) % 5) * 0.035
-	local val = 0.58 + ((i * 3) % 4) * 0.05
-	return Color3.fromHSV(hue, sat, val)
+	local sat = 0.62 + ((i * 7) % 5) * 0.04
+	local val = 0.88 + ((i * 3) % 4) * 0.03
+	return Color3.fromHSV(hue, math.clamp(sat, 0.55, 0.85), math.clamp(val, 0.82, 0.98))
 end
 
 -- ============================================================================
@@ -578,9 +604,9 @@ end
 function Engine:spawnNation(n, cell)
 	local w, h = self.w, self.h
 	local cx, cy = cell % w, cell // w
-	for dy = -5, 5 do
-		for dx = -5, 5 do
-			if dx * dx + dy * dy <= 26 then
+	for dy = -6, 6 do
+		for dx = -6, 6 do
+			if dx * dx + dy * dy <= 38 then
 				local y = cy + dy
 				if y >= 0 and y < h then
 					local j = y * w + ((cx + dx) % w)
@@ -596,7 +622,7 @@ function Engine:spawnNation(n, cell)
 	n.capital = cell
 	n.troops = START_TROOPS
 	n.attacks = {}
-	self:fx("CAPITAL_SPAWN", cell, 8)
+	self:fx("CAPITAL_SPAWN", cell, 12)
 	return n.alive
 end
 
@@ -626,7 +652,7 @@ function Engine:initCountries()
 	for _, c in ipairs(CountryData.countries) do
 		local cid, name, iso, cont, pop = c[1], c[2], c[3], c[4], c[5]
 		local hue = (CONTINENT_HUE[cont] or 0.5) + (((cid * 37) % 100) / 100 - 0.5) * 0.08
-		local color = Color3.fromHSV(hue % 1, 0.42 + ((cid * 7) % 5) * 0.04, 0.6 + ((cid * 3) % 4) * 0.05)
+		local color = Color3.fromHSV(hue % 1, 0.62 + ((cid * 7) % 5) * 0.04, 0.88 + ((cid * 3) % 4) * 0.03)
 		local n = self:addNation(name, color, true, nil)
 		n.countryId = cid
 		n.continent = cont

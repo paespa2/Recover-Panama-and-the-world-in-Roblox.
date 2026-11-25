@@ -54,10 +54,10 @@ local WorldFx = folder:WaitForChild("WorldFx")
 -- ============================================================================
 -- PALETAS Y CONSTANTES
 -- ============================================================================
-local OCEAN_COLOR = Color3.fromRGB(15, 32, 58)
-local DEEP_OCEAN_COLOR = Color3.fromRGB(10, 22, 42)
-local UNCLAIMED_LAND = Color3.fromRGB(72, 85, 78)
-local UNCLAIMED_BORDER = Color3.fromRGB(52, 65, 58)
+local OCEAN_COLOR = Color3.fromRGB(18, 34, 56) -- FrontWars Deep Navy
+local DEEP_OCEAN_COLOR = Color3.fromRGB(12, 24, 40)
+local UNCLAIMED_LAND = Color3.fromRGB(158, 178, 142) -- FrontWars Flat Pastel Sage
+local UNCLAIMED_BORDER = Color3.fromRGB(130, 150, 115)
 local HUMAN_AURA_COLOR = Color3.fromRGB(255, 220, 0)
 local BASE_WIDTH = 2400
 local BASE_HEIGHT = 1000
@@ -1760,8 +1760,8 @@ local function initBlocks(w, h)
 		task.wait()
 	end
 	mapImage.Visible = false
-	state.useTiles = state.planet == "EARTH"
-	setTilesVisible(state.useTiles)
+	state.useTiles = false
+	setTilesVisible(false)
 	local bw, bh = w // BLOCK, h // BLOCK
 	if state.blocks and state.blockW == bw and state.blockH == bh then
 		state.blockMode = true
@@ -2032,46 +2032,18 @@ local function recolorBlock(bi)
 		end
 	end
 
-	local r, g, bl = b.r, b.g, b.b
 	local n = if bestId ~= 0 then state.rosterById[bestId] else nil
-	-- Con las teselas de fondo, el bloque solo se tiñe (semitransparente) donde un país domina la celda
-	if state.useTiles and n and bestCount < 8 then
-		n = nil
-	end
-	local transparency = 0
+	local finalColor
 	if n then
-		local isMe = bestId == state.myId
-		if state.useTiles then
-			r, g, bl = n.r or 200, n.g or 200, n.b or 200
-			-- Tú y los jugadores humanos se ven con más fuerza que los bots
-			transparency = if isMe then 0.5 elseif n.bot == false then 0.55 else 0.68 -- fills suaves: el relieve se transparenta
-		else
-			local alpha = math.min(if isMe then 0.8 else 0.64, bestCount / (BLOCK * BLOCK) * 1.6)
-			r = r * (1 - alpha) + (n.r or 200) * alpha
-			g = g * (1 - alpha) + (n.g or 200) * alpha
-			bl = bl * (1 - alpha) + (n.b or 200) * alpha
-		end
-		if isMe then
-			r, g, bl = r * 1.12, g * 1.12, bl * 1.12
-		end
-	elseif state.useTiles then
-		transparency = 1
+		-- Colores 100% sólidos, planos y vibrantes estilo FrontWars (sin sombreados de satélite)
+		finalColor = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.22) else n.color
+	else
+		finalColor = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
 	end
-	local finalColor = Color3.fromRGB(
-		math.clamp(math.floor(r), 0, 255),
-		math.clamp(math.floor(g), 0, 255),
-		math.clamp(math.floor(bl), 0, 255)
-	)
-	local ownerNow = if n then bestId else 0
+
 	b.frame.BackgroundColor3 = finalColor
-	b.frame.BackgroundTransparency = transparency
-	local ownerChanged = b.owner ~= ownerNow
-	b.owner = ownerNow
-	-- Cambió el dueño del bloque: se redibujan sus contornos y los de sus 4 vecinos (comparten lado)
-	-- Las fronteras ahora se dibujan pixel a pixel directamente desde applyDiff
-	if ownerChanged and state.animReady then
-		-- sin contorno de bloque
-	end
+	b.frame.BackgroundTransparency = 0 -- Totalmente opaco y plano
+	b.owner = if n then bestId else 0
 end
 
 local function markBlockDirty(idx)
@@ -2263,35 +2235,55 @@ end
 
 function fullRedraw()
 	if state.blockMode then
-		if not state.blocks or not state.owner or not state.baseBuffer then
+		if not state.blocks or not state.owner then
 			return
 		end
-		state.animReady = false -- el primer dibujado no debe animarse
-		-- Color base de cada bloque = media de la foto satelital (incluye mar y costas)
-		local w, base = state.w, state.baseBuffer
+		state.animReady = false
+		local w, land, owner = state.w, state.land, state.owner
 		local area = BLOCK * BLOCK
 		for bi = 1, state.blockW * state.blockH do
 			local bx = (bi - 1) % state.blockW
 			local by = (bi - 1) // state.blockW
-			local sr, sg, sb = 0, 0, 0
-			for y = by * BLOCK, by * BLOCK + BLOCK - 1 do
-				for x = bx * BLOCK, bx * BLOCK + BLOCK - 1 do
-					local o = (y * w + x) * 3
-					sr += buffer.readu8(base, o)
-					sg += buffer.readu8(base, o + 1)
-					sb += buffer.readu8(base, o + 2)
-				end
-			end
 			local b = state.blocks[bi]
-			b.r, b.g, b.b = sr / area, sg / area, sb / area
-			state.dirtyBlocks[bi] = true
+			if b then
+				local landCount = 0
+				local counts = {}
+				local bestId, bestCount = 0, 0
+				for y = by * BLOCK, by * BLOCK + BLOCK - 1 do
+					local row = y * w
+					for x = bx * BLOCK, bx * BLOCK + BLOCK - 1 do
+						local cell = row + x
+						if land and buffer.readu8(land, cell) == 1 then
+							landCount += 1
+						end
+						local o = buffer.readu8(owner, cell)
+						if o ~= 0 then
+							local c = (counts[o] or 0) + 1
+							counts[o] = c
+							if c > bestCount then
+								bestCount = c
+								bestId = o
+							end
+						end
+					end
+				end
+				b.isLand = (landCount >= (area / 3))
+				local n = if bestId ~= 0 then state.rosterById[bestId] else nil
+				local col
+				if n then
+					col = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.22) else n.color
+				else
+					col = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
+				end
+				b.frame.BackgroundColor3 = col
+				b.frame.BackgroundTransparency = 0
+				b.owner = if n then bestId else 0
+			end
 		end
-		flushImage()
-		-- Contornos de color de todos los territorios (los cambios que lleguen mientras tanto solo anotan dueños)
-		state.blockBuilding = true
-		rebuildEdges()
-		state.blockBuilding = false
-		state.animReady = true -- a partir de aquí, las conquistas se animan
+		state.animReady = true
+		if state.refreshEdges then
+			state.refreshEdges()
+		end
 		return
 	end
 	if not state.editableImage or not state.pixelBuffer or not state.land or not state.owner then
@@ -2342,24 +2334,16 @@ local function applyLabelZoom()
 			if m.marker then m.marker.Visible = false end
 		else
 			if m.marker then m.marker.Visible = true end
-			local ds = math.clamp(math.floor((if m.isMe then 12 else 7) * (0.75 + 0.3 * rel)), 5, 24)
+			local ds = math.clamp(math.floor((if m.isMe then 24 else 18) * (0.85 + 0.2 * rel)), 14, 30)
 			m.dot.Size = UDim2.fromOffset(ds, ds)
-			local show = m.always or rel >= 1.8
-			m.label.Visible = show
+			local show = m.always or rel >= 1.3
+			if m.badge then
+				m.badge.Visible = show
+				m.badge.Position = UDim2.fromOffset(0, -ds / 2 - 4)
+			end
 			if m.troops then
 				m.troops.Visible = show and m.troops.Text ~= ""
-			end
-			if show then
-				local size = math.clamp(math.floor(7 + 3 * rel), 8, 17) + (if m.strong then 2 else 0)
-				local width = math.max(100, size * 14)
-				m.label.TextSize = size
-				m.label.Size = UDim2.fromOffset(width, size + 6)
-				m.label.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2)
-				if m.troops then
-					m.troops.TextSize = math.max(8, size - 1)
-					m.troops.Size = UDim2.fromOffset(width, size + 4)
-					m.troops.Position = UDim2.fromOffset(12 - width / 2, 10 + ds / 2 + size + 4)
-				end
+				m.troops.Position = UDim2.fromOffset(0, ds / 2 + 2)
 			end
 		end
 	end
@@ -2429,52 +2413,86 @@ local function updateMarkers()
 				crownLabel.Parent = marker
 			end
 
-			-- Punto de la capital
+			local isHuman = n.bot == false
+
+			-- Disco Base / Fortaleza circular estilo FrontWars
 			local dot = Instance.new("Frame")
 			dot.Name = "Dot"
 			dot.AnchorPoint = Vector2.new(0.5, 0.5)
 			dot.Position = UDim2.fromScale(0.5, 0.5)
-			dot.Size = isMe and UDim2.fromOffset(14, 14) or UDim2.fromOffset(8, 8)
-			dot.BackgroundColor3 = isMe and Color3.fromRGB(255, 240, 50) or n.color
-			dot.BorderSizePixel = 1
-			dot.BorderColor3 = isMe and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(10, 10, 15)
+			dot.Size = isMe and UDim2.fromOffset(22, 22) or UDim2.fromOffset(16, 16)
+			dot.BackgroundColor3 = isMe and Color3.fromRGB(255, 225, 50) or n.color
+			dot.BorderSizePixel = 0
+			dot.ZIndex = 12
 			dot.Parent = marker
 
 			local dotCorner = Instance.new("UICorner")
 			dotCorner.CornerRadius = UDim.new(1, 0)
 			dotCorner.Parent = dot
 
-			-- Etiqueta con el nombre
+			local dotStroke = Instance.new("UIStroke")
+			dotStroke.Thickness = 2.5
+			dotStroke.Color = Color3.fromRGB(15, 22, 34)
+			dotStroke.Parent = dot
+
+			local centerIcon = Instance.new("TextLabel")
+			centerIcon.Name = "CenterIcon"
+			centerIcon.Size = UDim2.fromScale(1, 1)
+			centerIcon.BackgroundTransparency = 1
+			centerIcon.Font = Enum.Font.GothamBlack
+			centerIcon.Text = if isMe then "👑" elseif isHuman then "👤" else "⭐"
+			centerIcon.TextSize = isMe and 12 or 9
+			centerIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
+			centerIcon.ZIndex = 13
+			centerIcon.Parent = dot
+
+			-- Badge flotante superior estilo FrontWars: [ 🇲🇽 Mexico 766 ]
+			local badge = Instance.new("Frame")
+			badge.Name = "FloatingBadge"
+			badge.AnchorPoint = Vector2.new(0.5, 1)
+			badge.Position = UDim2.fromOffset(0, isMe and -16 or -12)
+			badge.Size = UDim2.fromOffset(110, 20)
+			badge.BackgroundColor3 = Color3.fromRGB(12, 18, 28)
+			badge.BackgroundTransparency = 0.15
+			badge.BorderSizePixel = 0
+			badge.ZIndex = 14
+			badge.Parent = marker
+
+			local badgeCorner = Instance.new("UICorner")
+			badgeCorner.CornerRadius = UDim.new(0, 4)
+			badgeCorner.Parent = badge
+
+			local badgeStroke = Instance.new("UIStroke")
+			badgeStroke.Thickness = 1
+			badgeStroke.Color = if isMe then Color3.fromRGB(255, 215, 0) else Color3.fromRGB(45, 60, 90)
+			badgeStroke.Parent = badge
+
 			local nameLbl = Instance.new("TextLabel")
 			nameLbl.Name = "Name"
-			nameLbl.Size = UDim2.fromOffset(100, 16)
-			nameLbl.Position = UDim2.fromOffset(-38, isMe and 14 or 8)
+			nameLbl.Size = UDim2.new(1, -6, 1, 0)
+			nameLbl.Position = UDim2.fromOffset(3, 0)
 			nameLbl.BackgroundTransparency = 1
-			local isHuman = n.bot == false
-			nameLbl.Font = if isMe or isHuman then Enum.Font.GothamBlack else Enum.Font.GothamBold
+			nameLbl.Font = Enum.Font.GothamBold
 			nameLbl.Text = (if isMe then "👑 " elseif isHuman then "👤 " else "") .. n.name
-			-- El rótulo toma el color del país (aclarado) y lleva contorno oscuro para leerse sobre cualquier fondo
-			nameLbl.TextColor3 = if isMe
-				then Color3.fromRGB(255, 230, 50)
-				else n.color:Lerp(Color3.new(1, 1, 1), if isHuman then 0.25 else 0.55)
-			nameLbl.TextStrokeTransparency = 0.35
-			nameLbl.TextStrokeColor3 = Color3.fromRGB(8, 10, 16)
-			nameLbl.TextSize = if isMe or isHuman then 12 else 9
-			nameLbl.ZIndex = 11
-			nameLbl.Parent = marker
+			nameLbl.TextColor3 = if isMe then Color3.fromRGB(255, 230, 60) else Color3.fromRGB(240, 245, 255)
+			nameLbl.TextSize = 10
+			nameLbl.TextXAlignment = Enum.TextXAlignment.Center
+			nameLbl.ZIndex = 15
+			nameLbl.Parent = badge
 
-			-- Tropas debajo del nombre, como en RoWorld ("Guyana 21.1K")
 			local troopsLbl = Instance.new("TextLabel")
 			troopsLbl.Name = "Troops"
-			troopsLbl.Size = UDim2.fromOffset(100, 14)
+			troopsLbl.Size = UDim2.fromOffset(80, 14)
+			troopsLbl.Position = UDim2.fromOffset(0, 22)
+			troopsLbl.AnchorPoint = Vector2.new(0.5, 0)
 			troopsLbl.BackgroundTransparency = 1
 			troopsLbl.Font = Enum.Font.GothamBlack
 			troopsLbl.Text = ""
-			troopsLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-			troopsLbl.TextStrokeTransparency = 0.25
-			troopsLbl.TextStrokeColor3 = Color3.fromRGB(8, 10, 16)
+			troopsLbl.TextColor3 = Color3.fromRGB(0, 235, 140)
+			troopsLbl.TextStrokeTransparency = 0.3
+			troopsLbl.TextStrokeColor3 = Color3.fromRGB(10, 15, 25)
 			troopsLbl.TextSize = 9
-			troopsLbl.ZIndex = 11
+			troopsLbl.ZIndex = 14
 			troopsLbl.Parent = marker
 
 			table.insert(markerPool, marker)
@@ -2482,6 +2500,7 @@ local function updateMarkers()
 				id = n.id,
 				troops = troopsLbl,
 				label = nameLbl,
+				badge = badge,
 				dot = dot,
 				marker = marker,
 				capX = capX,
