@@ -293,6 +293,128 @@ local btnCenterCorner = Instance.new("UICorner")
 btnCenterCorner.CornerRadius = UDim.new(0, 4)
 btnCenterCorner.Parent = btnCenter
 
+-- Botón Configuración Táctica / Atajos
+local btnTactical = Instance.new("TextButton")
+btnTactical.Name = "BtnTactical"
+btnTactical.AnchorPoint = Vector2.new(1, 0.5)
+btnTactical.Position = UDim2.new(1, -506, 0.5, 0)
+btnTactical.Size = UDim2.fromOffset(116, 34)
+btnTactical.BackgroundColor3 = Color3.fromRGB(22, 36, 60)
+btnTactical.Font = Enum.Font.GothamBold
+btnTactical.Text = "⚙️ Táctica (H)"
+btnTactical.TextColor3 = Color3.fromRGB(245, 175, 45)
+btnTactical.TextSize = 12
+btnTactical.BorderSizePixel = 0
+btnTactical.ZIndex = 21
+btnTactical.Parent = topBar
+roundCorners(btnTactical, 4)
+
+-- Modal emergente de Configuración Táctica / Atajos rápidos (Tecla H o botón en barra superior)
+local tacticalModal = Instance.new("Frame")
+tacticalModal.Name = "TacticalConfigModal"
+tacticalModal.AnchorPoint = Vector2.new(0.5, 0.5)
+tacticalModal.Position = UDim2.fromScale(0.5, 0.5)
+tacticalModal.Size = UDim2.fromOffset(500, 270)
+tacticalModal.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
+tacticalModal.BorderSizePixel = 0
+tacticalModal.ZIndex = 85
+tacticalModal.Visible = false
+tacticalModal.Parent = root
+roundCorners(tacticalModal, 12)
+
+local modalStroke = Instance.new("UIStroke")
+modalStroke.Color = Color3.fromRGB(45, 75, 120)
+modalStroke.Thickness = 2
+modalStroke.Parent = tacticalModal
+
+local modalTitle = Instance.new("TextLabel")
+modalTitle.BackgroundTransparency = 1
+modalTitle.Position = UDim2.fromOffset(20, 16)
+modalTitle.Size = UDim2.new(1, -60, 0, 22)
+modalTitle.Font = Enum.Font.GothamBlack
+modalTitle.Text = "CONFIGURACIÓN TÁCTICA"
+modalTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+modalTitle.TextSize = 18
+modalTitle.TextXAlignment = Enum.TextXAlignment.Left
+modalTitle.ZIndex = 86
+modalTitle.Parent = tacticalModal
+
+local modalSub = Instance.new("TextLabel")
+modalSub.BackgroundTransparency = 1
+modalSub.Position = UDim2.fromOffset(20, 40)
+modalSub.Size = UDim2.new(1, -60, 0, 16)
+modalSub.Font = Enum.Font.GothamBold
+modalSub.Text = "PREFERENCIAS DE INTERFAZ Y RENDIMIENTO"
+modalSub.TextColor3 = Color3.fromRGB(245, 175, 45)
+modalSub.TextSize = 11
+modalSub.TextXAlignment = Enum.TextXAlignment.Left
+modalSub.ZIndex = 86
+modalSub.Parent = tacticalModal
+
+local modalClose = Instance.new("TextButton")
+modalClose.AnchorPoint = Vector2.new(1, 0)
+modalClose.Position = UDim2.new(1, -16, 0, 16)
+modalClose.Size = UDim2.fromOffset(28, 28)
+modalClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+modalClose.BorderSizePixel = 0
+modalClose.Font = Enum.Font.GothamBlack
+modalClose.Text = "✕"
+modalClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+modalClose.TextSize = 14
+modalClose.ZIndex = 87
+modalClose.Parent = tacticalModal
+roundCorners(modalClose, 6)
+modalClose.MouseButton1Click:Connect(function()
+	tacticalModal.Visible = false
+end)
+
+local modalBullets = Instance.new("TextLabel")
+modalBullets.BackgroundTransparency = 1
+modalBullets.Position = UDim2.fromOffset(20, 68)
+modalBullets.Size = UDim2.new(1, -40, 0, 80)
+modalBullets.Font = Enum.Font.Gotham
+modalBullets.Text = "• Atajos rápidos: H (How to Play), M (Silenciar música), Esc (Cerrar menús)\n• Escalado Responsivo UIScale: ACTIVO (Automático 1080p / 720p / Móvil)\n• Renderizado de Fronteras Iluminadas (2 pasadas): ACTIVO\n• Actualización de Bloques Sucios (Dirty Rectangles): ACTIVO"
+modalBullets.TextColor3 = Color3.fromRGB(220, 230, 245)
+modalBullets.TextSize = 12
+modalBullets.TextXAlignment = Enum.TextXAlignment.Left
+modalBullets.TextWrapped = true
+modalBullets.ZIndex = 86
+modalBullets.Parent = tacticalModal
+
+local modalExtra = Instance.new("TextLabel")
+modalExtra.BackgroundTransparency = 1
+modalExtra.Position = UDim2.fromOffset(20, 154)
+modalExtra.Size = UDim2.new(1, -40, 0, 60)
+modalExtra.Font = Enum.Font.Gotham
+modalExtra.Text = "🖱 Controles: Clic en país o frontera para atacar · Arrastrar para paneo · Rueda para zoom\n⌨️ Construcción: 1-0 Teclado numérico (Ciudad, Fábrica, Puerto, SAM, etc.)\n🏳️ R: Retirada táctica · G: Modo Ataque · X: Modo Demolición"
+modalExtra.TextColor3 = Color3.fromRGB(150, 175, 205)
+modalExtra.TextSize = 11
+modalExtra.TextXAlignment = Enum.TextXAlignment.Left
+modalExtra.TextWrapped = true
+modalExtra.ZIndex = 86
+modalExtra.Parent = tacticalModal
+
+local commanderName = player.DisplayName or player.Name or "paespa"
+if commanderName == "" then
+	commanderName = "paespa"
+end
+
+local modalWelcome = Instance.new("TextLabel")
+modalWelcome.BackgroundTransparency = 1
+modalWelcome.Position = UDim2.fromOffset(20, 236)
+modalWelcome.Size = UDim2.new(1, -40, 0, 18)
+modalWelcome.Font = Enum.Font.GothamBold
+modalWelcome.Text = "Bienvenido, Comandante " .. commanderName
+modalWelcome.TextColor3 = Color3.fromRGB(90, 120, 160)
+modalWelcome.TextSize = 12
+modalWelcome.TextXAlignment = Enum.TextXAlignment.Left
+modalWelcome.ZIndex = 86
+modalWelcome.Parent = tacticalModal
+
+btnTactical.MouseButton1Click:Connect(function()
+	tacticalModal.Visible = not tacticalModal.Visible
+end)
+
 -- ============================================================================
 -- LEADERBOARD (Top Naciones + Tu posición destacada en Neón/Oro)
 -- ============================================================================
@@ -968,9 +1090,9 @@ do
 	end
 end
 
+local buildingFrames = {}
 local updateBuildings = function() end
 do
-	local buildingFrames = {}
 	local BUILDING_ICONS = {
 		City = "🏙️",
 		Factory = "🏭",
@@ -1616,16 +1738,70 @@ for i, n in ipairs(BOT_COUNTS) do
 	botChips[n] = chip
 end
 
--- Consejos de juego
-local tips = lobbyLabel(
-	"🖱 Clic en una frontera: atacar   ·   Clic derecho + arrastrar: mover el mapa   ·   Rueda: zoom\n🛡 La IA de Defensa protege tus fronteras; tú decides dónde construir y a quién atacar.",
-	UDim2.fromOffset(rightX, 398),
-	UDim2.fromOffset(396, 70),
-	Enum.Font.Gotham,
-	Color3.fromRGB(130, 148, 176),
-	11
-)
-tips.TextYAlignment = Enum.TextYAlignment.Top
+-- Tarjeta de Configuración Táctica idéntica a la especificación de referencia
+local tacticalCard = Instance.new("Frame")
+tacticalCard.Name = "TacticalCard"
+tacticalCard.Position = UDim2.fromOffset(rightX, 382)
+tacticalCard.Size = UDim2.fromOffset(396, 92)
+tacticalCard.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
+tacticalCard.BorderSizePixel = 0
+tacticalCard.ZIndex = 62
+tacticalCard.Parent = lobbyCard
+roundCorners(tacticalCard, 8)
+
+local tacticalCardStroke = Instance.new("UIStroke")
+tacticalCardStroke.Color = Color3.fromRGB(40, 58, 84)
+tacticalCardStroke.Thickness = 1
+tacticalCardStroke.Parent = tacticalCard
+
+local tacTitle = Instance.new("TextLabel")
+tacTitle.BackgroundTransparency = 1
+tacTitle.Position = UDim2.fromOffset(10, 6)
+tacTitle.Size = UDim2.new(1, -20, 0, 16)
+tacTitle.Font = Enum.Font.GothamBlack
+tacTitle.Text = "CONFIGURACIÓN TÁCTICA"
+tacTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+tacTitle.TextSize = 13
+tacTitle.TextXAlignment = Enum.TextXAlignment.Left
+tacTitle.ZIndex = 63
+tacTitle.Parent = tacticalCard
+
+local tacSub = Instance.new("TextLabel")
+tacSub.BackgroundTransparency = 1
+tacSub.Position = UDim2.fromOffset(10, 22)
+tacSub.Size = UDim2.new(1, -20, 0, 12)
+tacSub.Font = Enum.Font.GothamBold
+tacSub.Text = "PREFERENCIAS DE INTERFAZ Y RENDIMIENTO"
+tacSub.TextColor3 = Color3.fromRGB(245, 175, 45)
+tacSub.TextSize = 9
+tacSub.TextXAlignment = Enum.TextXAlignment.Left
+tacSub.ZIndex = 63
+tacSub.Parent = tacticalCard
+
+local tacBullets = Instance.new("TextLabel")
+tacBullets.BackgroundTransparency = 1
+tacBullets.Position = UDim2.fromOffset(10, 36)
+tacBullets.Size = UDim2.new(1, -20, 0, 42)
+tacBullets.Font = Enum.Font.Gotham
+tacBullets.Text = "• Atajos rápidos: H (How to Play), M (Silenciar música), Esc (Cerrar menús)\n• Escalado Responsivo UIScale: ACTIVO (Automático 1080p / 720p / Móvil)\n• Renderizado de Fronteras Iluminadas (2 pasadas): ACTIVO\n• Actualización de Bloques Sucios (Dirty Rectangles): ACTIVO"
+tacBullets.TextColor3 = Color3.fromRGB(215, 226, 242)
+tacBullets.TextSize = 9
+tacBullets.TextXAlignment = Enum.TextXAlignment.Left
+tacBullets.TextWrapped = true
+tacBullets.ZIndex = 63
+tacBullets.Parent = tacticalCard
+
+local tacWelcome = Instance.new("TextLabel")
+tacWelcome.BackgroundTransparency = 1
+tacWelcome.Position = UDim2.fromOffset(10, 78)
+tacWelcome.Size = UDim2.new(1, -20, 0, 12)
+tacWelcome.Font = Enum.Font.GothamBold
+tacWelcome.Text = "Bienvenido, Comandante " .. commanderName
+tacWelcome.TextColor3 = Color3.fromRGB(90, 115, 145)
+tacWelcome.TextSize = 9
+tacWelcome.TextXAlignment = Enum.TextXAlignment.Left
+tacWelcome.ZIndex = 63
+tacWelcome.Parent = tacticalCard
 
 -- ---- Barra inferior: estado del servidor y botón JUGAR ----
 local lobbyDivider = Instance.new("Frame")
@@ -2480,11 +2656,13 @@ local function applyLabelZoom()
 		end
 	end
 
-	for cell, f in pairs(buildingFrames) do
-		local cx, cy = cell % w, cell // w
-		local inView = (cx >= x0 and cx <= x1 and cy >= y0 and cy <= y1)
-		local isMyOrSilo = f:GetAttribute("MyOrSilo") == true
-		f.Visible = inView and ((rel >= 1.35) or isMyOrSilo)
+	if buildingFrames then
+		for cell, f in pairs(buildingFrames) do
+			local cx, cy = cell % w, cell // w
+			local inView = (cx >= x0 and cx <= x1 and cy >= y0 and cy <= y1)
+			local isMyOrSilo = f:GetAttribute("MyOrSilo") == true
+			f.Visible = inView and ((rel >= 1.35) or isMyOrSilo)
+		end
 	end
 end
 
@@ -3174,18 +3352,73 @@ RunService.RenderStepped:Connect(function(dt)
 		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 + 2.5 * dt)
 	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
 		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 / (1 + 2.5 * dt))
-	elseif UserInputService:IsKeyDown(Enum.KeyCode.H) then
+	elseif UserInputService:IsKeyDown(Enum.KeyCode.F) then
 		fitToScreen()
 	end
 end)
 
--- FrontWars Hotkeys:
--- 1: Ciudad, 2: Fábrica, 3: Puerto, 4: Puesto Def., 5: SAM, 6: Barco Guerra, 7: Granja, 8: Mina, 9: Base Aérea, 0: Silo
+-- Sistema de Audio y Silenciado (Atajo M)
+local isMusicMuted = false
+local function toggleMusicMute()
+	isMusicMuted = not isMusicMuted
+	state.musicMuted = isMusicMuted
+	local SoundService = game:GetService("SoundService")
+	for _, inst in ipairs(SoundService:GetDescendants()) do
+		if inst:IsA("Sound") then
+			if isMusicMuted then
+				if not inst:GetAttribute("OrigVolume") then
+					inst:SetAttribute("OrigVolume", inst.Volume)
+				end
+				inst.Volume = 0
+			else
+				inst.Volume = inst:GetAttribute("OrigVolume") or 0.5
+			end
+		end
+	end
+	if isMusicMuted then
+		state.showToast("🔇 Música y audio silenciados [M]", Color3.fromRGB(240, 100, 100))
+	else
+		state.showToast("🔊 Audio y efectos activados [M]", Color3.fromRGB(100, 240, 140))
+	end
+end
+
+-- Cierre de ventanas y menús abiertos (Atajo Esc)
+local function closeOpenModals()
+	local closed = false
+	if tacticalModal and tacticalModal.Visible then
+		tacticalModal.Visible = false
+		closed = true
+	end
+	if lobbyScreen and lobbyScreen.Visible and state.initialized then
+		showLobby(false)
+		closed = true
+	end
+	local cp = root:FindFirstChild("CountryPanel")
+	if cp and cp.Visible then
+		cp.Visible = false
+		closed = true
+	end
+	return closed
+end
+
+-- FrontWars Hotkeys & Atajos rápidos:
+-- H: Configuración Táctica / How to Play
+-- M: Silenciar música y audio
+-- Esc: Cerrar menús y ventanas emergentes
+-- 1-0: Construcción rápida (Ciudad, Fábrica, Puerto, Puesto, SAM, Barco, Granja, Mina, Base Aérea, Silo)
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.One then
+	if input.KeyCode == Enum.KeyCode.H then
+		if tacticalModal then
+			tacticalModal.Visible = not tacticalModal.Visible
+		end
+	elseif input.KeyCode == Enum.KeyCode.M then
+		toggleMusicMute()
+	elseif input.KeyCode == Enum.KeyCode.Escape then
+		closeOpenModals()
+	elseif input.KeyCode == Enum.KeyCode.One then
 		setActionMode("BUILD_City")
 	elseif input.KeyCode == Enum.KeyCode.Two then
 		setActionMode("BUILD_Factory")
