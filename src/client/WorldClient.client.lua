@@ -1742,15 +1742,11 @@ end
 
 local function setTilesVisible(visible)
 	if visible and not tileLayer then
-		-- Capas globales del mapa: teselas 1 < bloques 2 < detalle 3 < resalte 4 < fronteras 5 < anillos 8-9 < marcadores 10+
+		-- Mapa de relieve natural de la Tierra (sin fronteras grises superpuestas sobre el mapa mundi)
 		tileLayer = makeTileLayer("TileLayer", EARTH_TILES, 1)
-		borderLayer = makeTileLayer("BorderLayer", BORDER_TILES, 5)
 	end
 	if tileLayer then
 		tileLayer.Visible = visible
-	end
-	if borderLayer then
-		borderLayer.Visible = visible
 	end
 end
 
@@ -1760,8 +1756,8 @@ local function initBlocks(w, h)
 		task.wait()
 	end
 	mapImage.Visible = false
-	state.useTiles = false
-	setTilesVisible(false)
+	state.useTiles = (state.planet == "EARTH")
+	setTilesVisible(state.useTiles)
 	local bw, bh = w // BLOCK, h // BLOCK
 	if state.blocks and state.blockW == bw and state.blockH == bh then
 		state.blockMode = true
@@ -2034,15 +2030,30 @@ local function recolorBlock(bi)
 
 	local n = if bestId ~= 0 then state.rosterById[bestId] else nil
 	local finalColor
-	if n then
-		-- Colores 100% sólidos, planos y vibrantes estilo FrontWars (sin sombreados de satélite)
-		finalColor = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.22) else n.color
+	local transparency = 0
+
+	if state.useTiles then
+		if n then
+			local isMe = bestId == state.myId
+			finalColor = if isMe then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
+			-- Territorio conquistado: color vivo de la nación sobre el mapa de relieve
+			transparency = if isMe then 0.20 elseif n.bot == false then 0.26 else 0.34
+		else
+			-- Continentes y tierra natural neutral: 100% transparente para que el relieve se vea limpio sin veladuras ni sombreados
+			finalColor = OCEAN_COLOR
+			transparency = 1
+		end
 	else
-		finalColor = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
+		if n then
+			finalColor = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
+		else
+			finalColor = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
+		end
+		transparency = 0
 	end
 
 	b.frame.BackgroundColor3 = finalColor
-	b.frame.BackgroundTransparency = 0 -- Totalmente opaco y plano
+	b.frame.BackgroundTransparency = transparency
 	b.owner = if n then bestId else 0
 end
 
@@ -2269,14 +2280,29 @@ function fullRedraw()
 				end
 				b.isLand = (landCount >= (area / 3))
 				local n = if bestId ~= 0 then state.rosterById[bestId] else nil
-				local col
-				if n then
-					col = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.22) else n.color
+				local col = OCEAN_COLOR
+				local transp = 0
+
+				if state.useTiles then
+					if n then
+						local isMe = bestId == state.myId
+						col = if isMe then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
+						transp = if isMe then 0.20 elseif n.bot == false then 0.26 else 0.34
+					else
+						col = OCEAN_COLOR
+						transp = 1
+					end
 				else
-					col = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
+					if n then
+						col = if bestId == state.myId then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
+					else
+						col = if b.isLand then UNCLAIMED_LAND else OCEAN_COLOR
+					end
+					transp = 0
 				end
+
 				b.frame.BackgroundColor3 = col
-				b.frame.BackgroundTransparency = 0
+				b.frame.BackgroundTransparency = transp
 				b.owner = if n then bestId else 0
 			end
 		end
@@ -3558,6 +3584,28 @@ local function updateSpawnUI()
 	bannerBar.BackgroundColor3 = if left <= 5 then Color3.fromRGB(255, 90, 90) else Color3.fromRGB(0, 220, 255)
 	spawnBannerStroke.Color = bannerBar.BackgroundColor3
 end
+
+-- Botón estilo FrontWars para iniciar la partida de inmediato cuando estés listo
+local btnStartNow = Instance.new("TextButton")
+btnStartNow.Name = "BtnStartNow"
+btnStartNow.Size = UDim2.fromOffset(130, 32)
+btnStartNow.AnchorPoint = Vector2.new(1, 0.5)
+btnStartNow.Position = UDim2.new(1, -16, 0.5, 0)
+btnStartNow.BackgroundColor3 = Color3.fromRGB(0, 190, 110)
+btnStartNow.BorderSizePixel = 0
+btnStartNow.Font = Enum.Font.GothamBlack
+btnStartNow.Text = "▶ ¡LISTO!"
+btnStartNow.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnStartNow.TextSize = 13
+btnStartNow.ZIndex = 45
+btnStartNow.Parent = spawnBanner
+roundCorners(btnStartNow, 6)
+
+btnStartNow.MouseButton1Click:Connect(function()
+	WorldCommand:FireServer({ a = "START_NOW" })
+	btnStartNow.Visible = false
+	showToast("⚔️ ¡Comenzando batalla ahora!", Color3.fromRGB(0, 230, 140))
+end)
 
 -- Anillo reutilizable (círculo con borde) sobre el mapa, dimensionado en celdas
 local function makeRing(parent, zIndex)

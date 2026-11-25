@@ -158,7 +158,12 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 
 	-- Las acciones del jugador son INTENCIONES: el motor las ejecuta al inicio del siguiente tick (ver Engine:runIntents)
 	local intent = nil
-	if action == "SPAWN" and validCell then
+	if action == "START_NOW" then
+		if engine and engine.phase == "SPAWN" then
+			engine.spawnTimer = 0
+		end
+		return
+	elseif action == "SPAWN" and validCell then
 		intent = { a = "SPAWN", cell = cell }
 	elseif action == "ATTACK" and validCell then
 		intent = { a = "ATTACK", cell = cell, ratio = math.clamp(tonumber(cmd.ratio) or 0.5, 0.1, 1) }
