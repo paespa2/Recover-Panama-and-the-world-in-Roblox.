@@ -381,19 +381,19 @@ statsRow.Parent = bottomHUD
 
 local troopsCard = Instance.new("TextLabel")
 troopsCard.Name = "TroopsCard"
-troopsCard.Size = UDim2.fromOffset(215, 30) -- cabe "Tropas: 123456/654321 (+1234/s)"
+troopsCard.Size = UDim2.fromOffset(215, 30) -- estilo FrontWars: píldora roja destacada
 troopsCard.Position = UDim2.fromOffset(0, 2)
-troopsCard.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
+troopsCard.BackgroundColor3 = Color3.fromRGB(210, 60, 60)
 troopsCard.BorderSizePixel = 0
 troopsCard.Font = Enum.Font.GothamBlack
-troopsCard.Text = "⚔️ Tropas: 1,500 (+25/s)"
-troopsCard.TextColor3 = Color3.fromRGB(0, 230, 150)
+troopsCard.Text = "⚔️ 1.5K / 10.0K (+25)"
+troopsCard.TextColor3 = Color3.fromRGB(255, 255, 255)
 troopsCard.TextSize = 12
 troopsCard.ZIndex = 22
 troopsCard.Parent = statsRow
 
 local troopsCorner = Instance.new("UICorner")
-troopsCorner.CornerRadius = UDim.new(0, 4)
+troopsCorner.CornerRadius = UDim.new(0, 8)
 troopsCorner.Parent = troopsCard
 
 local goldCard = Instance.new("TextLabel")
@@ -1048,21 +1048,68 @@ do
 	end
 end
 
+local function showCombatFloat(cell, text, color)
+	if not state.w or not state.h or cell < 0 or cell >= state.w * state.h then
+		return
+	end
+	local cx, cy = cell % state.w, cell // state.w
+	local lbl = Instance.new("TextLabel")
+	lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	lbl.Position = UDim2.fromScale((cx + 0.5) / state.w, (cy + 0.5) / state.h)
+	lbl.Size = UDim2.fromOffset(80, 20)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.GothamBlack
+	lbl.Text = text
+	lbl.TextColor3 = color or Color3.fromRGB(255, 235, 80)
+	lbl.TextSize = 13
+	lbl.ZIndex = 35
+	lbl.Parent = mapCanvas
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(10, 15, 25)
+	stroke.Thickness = 1.5
+	stroke.Parent = lbl
+
+	local tw = TweenService:Create(
+		lbl,
+		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Position = UDim2.fromScale((cx + 0.5) / state.w, (cy - 3.2) / state.h), TextTransparency = 1 }
+	)
+	tw:Play()
+	tw.Completed:Connect(function()
+		lbl:Destroy()
+	end)
+end
+
 local function playWeaponFx(fx)
 	if not state.initialized or type(fx) ~= "table" or not fx.cell or fx.cell >= state.w * state.h then
 		return
 	end
 	if fx.kind == "CAPITAL_SPAWN" then
-		-- Efecto de fundación de capital estilo FrontWars: 3 ondas concéntricas de pulso dorado
+		-- Efecto de fundación de capital estilo FrontWars: 4 ondas concéntricas de pulso que se expanden por el mundo
 		local d = (fx.r or 8) * 2 + 1
-		local col = fx.color or Color3.fromRGB(255, 215, 0)
-		for k = 0, 2 do
-			task.delay(k * 0.16, function()
-				fxCircle(fx.cell, 1, d * (0.8 + k * 0.4), col, 0.2, 0.85 + k * 0.2, 16)
+		local col = fx.color or Color3.fromRGB(0, 220, 255)
+		for k = 0, 3 do
+			task.delay(k * 0.15, function()
+				fxCircle(fx.cell, 1, d * (0.8 + k * 0.7), col, 0.25, 0.9 + k * 0.25, 18)
 			end)
 		end
-		fxCircle(fx.cell, 1, d * 0.5, Color3.new(1, 1, 1), 0.05, 0.55, 17)
+		fxCircle(fx.cell, 1, d * 0.6, Color3.new(1, 1, 1), 0.05, 0.6, 20)
 		playSound("SPAWN", 1.0, 0.6)
+		showCombatFloat(fx.cell, "👑 CAPITAL", Color3.fromRGB(255, 225, 60))
+		return
+	end
+	if fx.kind == "CAPITAL_FALL" then
+		local d = (fx.r or 12) * 2 + 1
+		for k = 0, 3 do
+			task.delay(k * 0.12, function()
+				fxCircle(fx.cell, 1, d * (0.6 + k * 0.5), Color3.fromRGB(255, 215, 0), 0.2, 0.8 + k * 0.2, 22)
+			end)
+		end
+		fxCircle(fx.cell, 1, d * 0.5, Color3.fromRGB(255, 255, 255), 0.05, 0.5, 24)
+		playSound("BOMB", 1.2, 0.8)
+		showToast("👑 ¡CAPITAL ENEMIGA CONQUISTADA!", Color3.fromRGB(255, 215, 0))
+		showCombatFloat(fx.cell, "💥 ¡ANEXADO! 👑", Color3.fromRGB(255, 215, 0))
 		return
 	end
 	if fx.kind == "BUILDING_PLACED" then
@@ -1330,37 +1377,83 @@ local MODES = {
 		icon = "🌐",
 		name = "FRONTWARS FFA",
 		desc = "Inicio 100% igualitario (1.5K tropas, 10K capacidad). Elige tu capital y conquista el mundo neutral.",
-		tag = "COMPETITIVO",
+		tag = "OFICIAL",
+	},
+	{
+		id = "TEAMS_2",
+		icon = "⚔️",
+		name = "2 EQUIPOS: ROJO vs AZUL",
+		desc = "Guerra bipolar: La mitad del mundo es Roja y la otra Azul. Aliados no se atacan y ganan juntos.",
+		tag = "EQUIPOS",
+	},
+	{
+		id = "CONTINENTS",
+		icon = "🧭",
+		name = "CONTINENTES UNIDOS",
+		desc = "Cada continente forma una alianza unida contra los otros continentes.",
+		tag = "ALIANZAS",
+	},
+	{
+		id = "BLITZ",
+		icon = "⚡",
+		name = "MODO RÁPIDO (BLITZ)",
+		desc = "Economía x2.5, producción de tropas acelerada. Partidas ultra rápidas y dinámicas.",
+		tag = "RÁPIDO",
+	},
+	{
+		id = "ZOMBIES",
+		icon = "🧟",
+		name = "INFECCIÓN ZOMBI",
+		desc = "Una horda zombi infectada devora el mapa. ¡Si tu nación cae, te unes a los infectados!",
+		tag = "SUPERVIVENCIA",
+	},
+	{
+		id = "BATTLE_ROYALE",
+		icon = "🌪️",
+		name = "BATTLE ROYALE",
+		desc = "Una zona de tormenta encoge los límites del mapa hacia el centro. ¡El último en pie gana!",
+		tag = "TORMENTA",
 	},
 	{
 		id = "COUNTRIES",
 		icon = "🏳️",
 		name = "HISTÓRICO ASIMÉTRICO",
-		desc = "Fronteras reales de la historia (Rusia gigante, Panamá pequeño). Desafío asimétrico no competitivo.",
+		desc = "Fronteras y naciones reales de la Tierra. Desafío asimétrico no competitivo.",
 		tag = "DESAFÍO",
 	},
-	{
-		id = "CONTINENTS",
-		icon = "🧭",
-		name = "CONTINENTES",
-		desc = "Cada continente es un equipo: los aliados no se atacan. Gana el equipo con más del 55 % de la tierra.",
-		tag = "POR EQUIPOS",
-	},
 }
+
+local modesScroll = Instance.new("ScrollingFrame")
+modesScroll.Name = "ModesScroll"
+modesScroll.Position = UDim2.fromOffset(28, 120)
+modesScroll.Size = UDim2.fromOffset(444, 345)
+modesScroll.BackgroundTransparency = 1
+modesScroll.BorderSizePixel = 0
+modesScroll.ScrollBarThickness = 5
+modesScroll.ScrollBarImageColor3 = COLOR_ACCENT
+modesScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+modesScroll.CanvasSize = UDim2.new()
+modesScroll.ZIndex = 62
+modesScroll.Parent = lobbyCard
+
+local modesLayout = Instance.new("UIListLayout")
+modesLayout.SortOrder = Enum.SortOrder.LayoutOrder
+modesLayout.Padding = UDim.new(0, 8)
+modesLayout.Parent = modesScroll
 
 local modeCards = {}
 for i, m in ipairs(MODES) do
 	local card = Instance.new("TextButton")
 	card.Name = "Mode_" .. m.id
-	card.Position = UDim2.fromOffset(28, 120 + (i - 1) * 108)
-	card.Size = UDim2.fromOffset(440, 98)
+	card.LayoutOrder = i
+	card.Size = UDim2.new(1, -10, 0, 86)
 	card.BackgroundColor3 = COLOR_CARD
 	card.BorderSizePixel = 0
 	card.AutoButtonColor = not m.disabled
 	card.Text = ""
-	card.ZIndex = 62
-	card.Parent = lobbyCard
-	roundCorners(card, 12)
+	card.ZIndex = 63
+	card.Parent = modesScroll
+	roundCorners(card, 10)
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Thickness = 2
@@ -1369,52 +1462,52 @@ for i, m in ipairs(MODES) do
 
 	local icon = Instance.new("TextLabel")
 	icon.BackgroundTransparency = 1
-	icon.Position = UDim2.fromOffset(12, 0)
-	icon.Size = UDim2.fromOffset(58, 98)
+	icon.Position = UDim2.fromOffset(10, 0)
+	icon.Size = UDim2.fromOffset(48, 86)
 	icon.Font = Enum.Font.GothamBold
 	icon.Text = m.icon
-	icon.TextSize = 36
+	icon.TextSize = 30
 	icon.TextColor3 = Color3.fromRGB(255, 255, 255)
-	icon.ZIndex = 63
+	icon.ZIndex = 64
 	icon.Parent = card
 
 	local name = Instance.new("TextLabel")
 	name.BackgroundTransparency = 1
-	name.Position = UDim2.fromOffset(76, 14)
-	name.Size = UDim2.new(1, -90, 0, 22)
+	name.Position = UDim2.fromOffset(64, 10)
+	name.Size = UDim2.new(1, -78, 0, 20)
 	name.Font = Enum.Font.GothamBlack
 	name.Text = m.name
-	name.TextSize = 16
+	name.TextSize = 14
 	name.TextXAlignment = Enum.TextXAlignment.Left
 	name.TextColor3 = if m.disabled then Color3.fromRGB(120, 130, 150) else Color3.fromRGB(240, 246, 255)
-	name.ZIndex = 63
+	name.ZIndex = 64
 	name.Parent = card
 
 	local desc = Instance.new("TextLabel")
 	desc.BackgroundTransparency = 1
-	desc.Position = UDim2.fromOffset(76, 40)
-	desc.Size = UDim2.new(1, -92, 0, 48)
+	desc.Position = UDim2.fromOffset(64, 32)
+	desc.Size = UDim2.new(1, -80, 0, 46)
 	desc.Font = Enum.Font.Gotham
 	desc.Text = m.desc
-	desc.TextSize = 12
+	desc.TextSize = 11
 	desc.TextWrapped = true
 	desc.TextXAlignment = Enum.TextXAlignment.Left
 	desc.TextYAlignment = Enum.TextYAlignment.Top
 	desc.TextColor3 = Color3.fromRGB(150, 168, 196)
-	desc.ZIndex = 63
+	desc.ZIndex = 64
 	desc.Parent = card
 
 	if m.tag then
 		local tag = Instance.new("TextLabel")
 		tag.AnchorPoint = Vector2.new(1, 0)
-		tag.Position = UDim2.new(1, -10, 0, 10)
-		tag.Size = UDim2.fromOffset(104, 18)
+		tag.Position = UDim2.new(1, -8, 0, 8)
+		tag.Size = UDim2.fromOffset(98, 18)
 		tag.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
 		tag.Font = Enum.Font.GothamBlack
 		tag.Text = m.tag
-		tag.TextSize = 10
+		tag.TextSize = 9
 		tag.TextColor3 = Color3.fromRGB(255, 255, 255)
-		tag.ZIndex = 64
+		tag.ZIndex = 65
 		tag.Parent = card
 		roundCorners(tag, 9)
 	end
@@ -1644,7 +1737,15 @@ for _, n in ipairs(BOT_COUNTS) do
 	end)
 end
 
-local MODE_NAMES = { FREE = "FrontWars FFA (Competitivo)", COUNTRIES = "Histórico Asimétrico", CONTINENTS = "Continentes" }
+local MODE_NAMES = {
+	FREE = "FrontWars FFA (Competitivo)",
+	TEAMS_2 = "2 Equipos (Rojo vs Azul)",
+	CONTINENTS = "Continentes Unidos",
+	BLITZ = "Modo Rápido (Blitz)",
+	ZOMBIES = "Infección Zombi",
+	BATTLE_ROYALE = "Battle Royale",
+	COUNTRIES = "Histórico Asimétrico",
+}
 local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
 
 function updateLobbyStatus()
@@ -2041,8 +2142,8 @@ local function recolorBlock(bi)
 		if n then
 			local isMe = bestId == state.myId
 			finalColor = if isMe then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
-			-- Territorio conquistado: color vivo de la nación sobre el mapa de relieve
-			transparency = if isMe then 0.20 elseif n.bot == false then 0.26 else 0.34
+			-- Territorio conquistado estilo FrontWars: color vivo pero translúcido para ver la geografía
+			transparency = if isMe then 0.25 elseif n.bot == false then 0.30 else 0.38
 		else
 			-- Continentes y tierra natural neutral: 100% transparente para que el relieve se vea limpio sin veladuras ni sombreados
 			finalColor = OCEAN_COLOR
@@ -2682,6 +2783,24 @@ local function handleMapClick(cell)
 		tw.Completed:Connect(function()
 			ripple:Destroy()
 		end)
+
+		if isNeutral then
+			showCombatFloat(cell, "+1 🚩", Color3.fromRGB(0, 240, 160))
+		else
+			local sent = math.max(100, math.floor((state.troops or 1500) * (state.attackRatio or 0.2)))
+			showCombatFloat(cell, "-" .. troopText(sent) .. " ⚔️", Color3.fromRGB(255, 75, 75))
+		end
+
+		-- Desembarco naval si el ataque cruza océano hacia una isla o costa lejana
+		if state.me and state.me.capital and state.me.capital >= 0 then
+			local cap = state.me.capital
+			local dx = math.abs(cell % state.w - cap % state.w)
+			dx = math.min(dx, state.w - dx)
+			local dy = math.abs(cell // state.w - cap // state.w)
+			if dx * dx + dy * dy > 1600 then
+				playWeaponFx({ kind = "NAVAL_LANDING", from = cap, cell = cell })
+			end
+		end
 
 		-- Marcar objetivo para el flujo de tropas de partículas (neutral o enemigo)
 		state.recentTargetCell = cell
