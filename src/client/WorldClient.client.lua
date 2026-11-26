@@ -54,11 +54,11 @@ local WorldFx = folder:WaitForChild("WorldFx")
 -- ============================================================================
 -- PALETAS Y CONSTANTES
 -- ============================================================================
-local OCEAN_COLOR = Color3.fromRGB(18, 34, 56) -- FrontWars Deep Navy
-local DEEP_OCEAN_COLOR = Color3.fromRGB(12, 24, 40)
-local UNCLAIMED_LAND = Color3.fromRGB(158, 178, 142) -- FrontWars Flat Pastel Sage
-local UNCLAIMED_BORDER = Color3.fromRGB(130, 150, 115)
-local HUMAN_AURA_COLOR = Color3.fromRGB(255, 220, 0)
+local OCEAN_COLOR = Color3.fromRGB(71, 133, 181) -- OpenFront.io Ocean Blue (#4785b5)
+local DEEP_OCEAN_COLOR = Color3.fromRGB(52, 102, 142)
+local UNCLAIMED_LAND = Color3.fromRGB(190, 220, 138) -- OpenFront.io Plains (#BEDC8A)
+local UNCLAIMED_BORDER = Color3.fromRGB(165, 195, 120)
+local HUMAN_AURA_COLOR = Color3.fromRGB(255, 213, 79) -- OpenFront.io Spawn Aura (#ffd54f)
 local BASE_WIDTH = 2400
 local BASE_HEIGHT = 1000
 
@@ -158,7 +158,7 @@ end
 local mapContainer = Instance.new("Frame")
 mapContainer.Name = "MapContainer"
 mapContainer.Size = UDim2.fromScale(1, 1)
-mapContainer.BackgroundColor3 = Color3.fromRGB(8, 12, 20)
+mapContainer.BackgroundColor3 = Color3.fromRGB(60, 60, 60) -- OpenFront.io Canvas (#3c3c3c)
 mapContainer.ClipsDescendants = true
 mapContainer.Parent = root
 
