@@ -1950,39 +1950,61 @@ local function planetPixel(def, x, y)
 	return r, g, b, math.clamp(1.0 - (dzdx + dzdy) * 2.4, 0.62, 1.4)
 end
 
-function WorldGrid.BuildBase(planetId, land)
+function WorldGrid.BuildBase(planetId, land, customW, customH)
 	local def = WorldGrid.PLANETS[planetId] or WorldGrid.PLANETS.EARTH
-	if def.kind == "earth" then
+	local mapW = customW or W
+	local mapH = customH or H
+
+	if def.kind == "frontwars" and def.mapId and (not customW or not customH) then
+		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
+		if not fwmModule then
+			local rs = game:GetService("ReplicatedStorage")
+			local sh = rs:FindFirstChild("Shared")
+			fwmModule = sh and sh:FindFirstChild("frontwars_maps")
+		end
+		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
+		if mapModule then
+			local mapData = require(mapModule)
+			mapW, mapH = mapData.w, mapData.h
+		end
+	end
+
+	if def.kind == "earth" and mapW == 960 and mapH == 400 then
 		local satellite = loadSatellite()
 		if satellite then
 			return satellite
 		end
 	end
-	local base = buffer.create(W * H * 3)
+
+	local base = buffer.create(mapW * mapH * 3)
 	if def.kind == "noise" or def.kind == "pangea" then
 		planetElev = computeElevation(def)
 	end
 
 	local function isLand(x, y)
-		if y < 0 or y >= H then
+		if y < 0 or y >= mapH then
 			return false
 		end
-		x = x % W
-		return buffer.readu8(land, y * W + x) == 1
+		x = x % mapW
+		local idx = y * mapW + x
+		if idx >= 0 and idx < buffer.len(land) then
+			return buffer.readu8(land, idx) == 1
+		end
+		return false
 	end
 
-	for y = 0, H - 1 do
-		for x = 0, W - 1 do
-			local i = y * W + x
+	for y = 0, mapH - 1 do
+		for x = 0, mapW - 1 do
+			local i = y * mapW + x
 			local r, g, b
 
 			-- Sombreado de relieve 3D direccional (Sol desde el Noroeste)
 			local shade = 1.0
-			if buffer.readu8(land, i) == 1 then
-				local leftX = if x == 0 then W - 1 else x - 1
-				local rightX = if x == W - 1 then 0 else x + 1
+			if isLand(x, y) then
+				local leftX = if x == 0 then mapW - 1 else x - 1
+				local rightX = if x == mapW - 1 then 0 else x + 1
 				local upY = math.max(0, y - 1)
-				local downY = math.min(H - 1, y + 1)
+				local downY = math.min(mapH - 1, y + 1)
 
 				local hL = math.noise(leftX * 0.1, y * 0.1, 4.3)
 				local hR = math.noise(rightX * 0.1, y * 0.1, 4.3)
@@ -1993,14 +2015,17 @@ function WorldGrid.BuildBase(planetId, land)
 				local dz_dy = (hD - hU) * 0.5
 				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
 
-				if def.kind == "earth" or def.kind == "frontwars" then
+				if def.kind == "frontwars" then
+					-- Paleta oficial OpenFront.io (#BEDC8A: llanuras)
+					r, g, b = 190, 220, 138
+				elseif def.kind == "earth" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
 						g = math.min(255, g + 14)
 					end
 				elseif def.kind == "galaxy" then
-					local u = ((x + 0.5) / W) * 2 - 1
-					local v = ((y + 0.5) / H) * 2 - 1
+					local u = ((x + 0.5) / mapW) * 2 - 1
+					local v = ((y + 0.5) / mapH) * 2 - 1
 					local rr = math.min(1, math.sqrt(u * u + v * v) * 1.1)
 					-- Brazos espirales con polvo y estrellas dispersas
 					local theta = math.atan2(v, u)
@@ -2032,11 +2057,12 @@ function WorldGrid.BuildBase(planetId, land)
 				elseif isLand(x - 2, y) or isLand(x + 2, y) or isLand(x, y - 2) or isLand(x, y + 2) then
 					near2 = true
 				end
-				local c = def.ocean
+
+				local c = def.ocean or { 71, 133, 181 }
 				if near1 then
-					c = def.shallow
+					c = def.shallow or { 60, 120, 170 }
 				elseif near2 then
-					c = def.mid
+					c = def.mid or { 50, 110, 160 }
 				end
 				local oceanShade = 1.0 + math.noise(x * 0.1, y * 0.1, 1.7) * 0.05
 				r, g, b = c[1] * oceanShade, c[2] * oceanShade, c[3] * oceanShade

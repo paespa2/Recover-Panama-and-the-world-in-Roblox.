@@ -4,3 +4,11 @@
 /target_repo/
 .DS_Store
 Thumbs.db
+
+*.mp4
+openfront_src/
+.playwright-mcp/
+tools/.cache/
+*.png
+*.jpg
+

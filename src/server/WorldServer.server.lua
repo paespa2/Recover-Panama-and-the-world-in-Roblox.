@@ -229,6 +229,11 @@ WorldCommand.OnServerEvent:Connect(function(player, cmd)
 	end
 end)
 
+Players.PlayerAdded:Connect(joinPlayer)
+for _, p in ipairs(Players:GetPlayers()) do
+	joinPlayer(p)
+end
+
 Players.PlayerRemoving:Connect(function(player)
 	local n = humanNations[player]
 	if n then

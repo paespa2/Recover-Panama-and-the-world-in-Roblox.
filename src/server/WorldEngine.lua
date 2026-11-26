@@ -259,7 +259,7 @@ end
 -- Coste de conquista por terreno (u8: 100 = llanura, hasta 180 = montaña muy escarpada). Se deduce de la rugosidad del
 -- relieve sombreado de la imagen del mapa: el gradiente de luminosidad es alto donde hay montañas y bajo en llanuras.
 local function buildTerrainCost(planetId, land, w, h)
-	local ok, base = pcall(WorldGrid.BuildBase, planetId, land)
+	local ok, base = pcall(WorldGrid.BuildBase, planetId, land, w, h)
 	if not ok or not base or buffer.len(base) ~= w * h * 3 then
 		return nil
 	end

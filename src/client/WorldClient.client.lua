@@ -4561,7 +4561,7 @@ WorldInit.OnClientEvent:Connect(function(data)
 	end
 
 	initEditableImage(state.w, state.h)
-	state.baseBuffer = WorldGrid.BuildBase(state.planet, state.land)
+	state.baseBuffer = WorldGrid.BuildBase(state.planet, state.land, state.w, state.h)
 	fullRedraw()
 	updateMarkers()
 	fitToScreen() -- vista inicial: el mundo entero ajustado a la pantalla
