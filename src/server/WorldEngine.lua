@@ -27,7 +27,7 @@ local WIN_RATIO = 0.80 -- OpenFront.io: 80% del mapa requerido para victoria
 local START_TROOPS = 10000 -- OpenFront.io: Inicio competitivo igualitario (10K tropas)
 local NUKE_COST = 900
 local NUKE_RADIUS = 16
-local POST_RADIUS = 20
+local POST_RADIUS = 32
 local PORT_RANGE = 140
 
 Engine.COSTS = {
@@ -1148,7 +1148,7 @@ function Engine:processAttack(n, atk)
 							dx = math.min(dx, w - dx)
 							local dy = math.abs(py - cy)
 							if dx * dx + dy * dy <= POST_RADIUS * POST_RADIUS then
-								cost *= 4.5 -- OpenFront.io: Puesto de defensa multiplica bajas enemigas hasta x4.5-x6
+								cost *= 5.0 -- OpenFront.io: Puesto de defensa multiplica defensa x5 (defensePostDefenseBonus = 5)
 								break
 							end
 						end
@@ -1453,6 +1453,7 @@ function Engine:playerAttack(n, cell, ratio)
 			local boatTroops = math.max(250, math.floor(n.troops * ratio * 0.20))
 			local lok, lmsg = self:landing(n, cell, boatTroops)
 			if lok then
+				self:launchAttack(n, target, ratio, cell)
 				self:notify(n.userId, "⚓ ¡Invasión naval! Barco de transporte desembarcó en la costa")
 				if target ~= 0 and self.nations[target] and self.nations[target].userId then
 					self:notify(self.nations[target].userId, "⚠️ ¡Invasión naval enemiga desembarcando en tus costas!")
