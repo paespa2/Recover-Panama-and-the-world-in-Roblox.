@@ -328,12 +328,12 @@ function Engine.new(planetId, botCount, difficulty, mode, seed)
 	self.disasterTimer = 55 + self.rng:NextNumber() * 30 -- primer desastre 55-85 s después de empezar la guerra
 	self._nb = {}
 
-	self.mode = "FREE"
-	self.teamMode = false
+	self.mode = mode or "FREE"
+	self.teamMode = (mode == "CONTINENTS" or mode == "TEAMS_2" or mode == "ZOMBIES")
 	-- Estilo de propagación: ORGANIC (frontera orgánica irregular con flujo de partículas), CELL (redonda), TENDRIL (tentáculos)
 	self.propagation = "ORGANIC"
 	if (mode == "COUNTRIES" or mode == "CONTINENTS") and self.planetId == "EARTH" and CountryData then
-		self.mode = "COUNTRIES"
+		self.mode = if mode == "CONTINENTS" then "CONTINENTS" else "COUNTRIES"
 		self.teamMode = (mode == "CONTINENTS") -- cada continente es un equipo: los aliados no se atacan
 		self:initCountries()
 		return self
@@ -344,9 +344,22 @@ function Engine.new(planetId, botCount, difficulty, mode, seed)
 		local j = self.rng:NextInteger(1, i)
 		names[i], names[j] = names[j], names[i]
 	end
-	local count = math.clamp(math.floor(botCount or 40), 0, 100)
+	local count = math.clamp(math.floor(botCount or 35), 0, 100)
 	for i = 1, count do
-		local n = self:addNation(names[i] or ("Nación " .. i), botColor(i), true, nil)
+		local nName = names[i] or ("Nación " .. i)
+		local col = botColor(i)
+		local team = nil
+		if self.mode == "TEAMS_2" then
+			team = if (i % 2 == 1) then "BLUE" else "RED"
+			col = if team == "BLUE" then Color3.fromRGB(0, 190, 255) else Color3.fromRGB(255, 65, 65)
+			nName = (if team == "BLUE" then "🔵 " else "🔴 ") .. nName
+		elseif self.mode == "ZOMBIES" and i == 1 then
+			team = "ZOMBIE"
+			col = Color3.fromRGB(50, 255, 70)
+			nName = "🧟 Horda Zombi"
+		end
+		local n = self:addNation(nName, col, true, nil)
+		n.team = team
 		self:autoSpawn(n, true)
 	end
 	return self
@@ -394,7 +407,17 @@ end
 function Engine:addHuman(player)
 	self.humanCount += 1
 	local color = HUMAN_COLORS[((self.humanCount - 1) % #HUMAN_COLORS) + 1]
-	local n = self:addNation(player.DisplayName, color, false, player)
+	local team = nil
+	local pName = player.DisplayName
+	if self.mode == "TEAMS_2" then
+		team = if (self.humanCount % 2 == 1) then "BLUE" else "RED"
+		color = if team == "BLUE" then Color3.fromRGB(0, 220, 255) else Color3.fromRGB(255, 75, 75)
+		pName = (if team == "BLUE" then "🔵 " else "🔴 ") .. pName
+	elseif self.mode == "ZOMBIES" then
+		team = "HUMAN"
+	end
+	local n = self:addNation(pName, color, false, player)
+	n.team = team
 	self.paused = false
 	return n
 end
@@ -1139,6 +1162,47 @@ function Engine:processAttack(n, atk)
 					tn.attackedBy[n.id] = self.time
 				end
 				self:setOwner(cell, n.id)
+				if tn and tn.capital == cell then
+					-- ¡CAPITAL ENEMIGA CONQUISTADA ESTILO FRONTWARS!
+					local bonusTroops = math.floor(tn.troops * 0.5) + 3000
+					local goldLoot = math.floor((tn.gold or 0) * 0.5) + math.max(500, (tn.cells or 0) * 4)
+					n.troops = math.min(self:maxTroops(n), n.troops + bonusTroops)
+					n.gold = (n.gold or 0) + goldLoot
+					self:fx("CAPITAL_FALL", cell, 18)
+					self:fx("GOLD_LOOT", cell, goldLoot)
+					local vicName = tn.name
+					self:notify(
+						nil,
+						string.format(
+							"👑 ¡%s conquistó la capital de %s! (+%d tropas, +%d oro)",
+							n.name,
+							vicName,
+							bonusTroops,
+							goldLoot
+						)
+					)
+					-- Anexar todas las celdas restantes de la víctima al conquistador
+					local x0, x1 = tn.bx0 or 0, tn.bx1 or (w - 1)
+					local y0, y1 = tn.by0 or 0, tn.by1 or (self.h - 1)
+					for ay = y0, y1 do
+						for ax = x0, x1 do
+							local ci = ay * w + ax
+							if buffer.readu8(owner, ci) == tn.id then
+								self:setOwner(ci, n.id)
+							end
+						end
+					end
+					tn.capital = nil
+					tn.alive = false
+					tn.eliminated = true
+					tn.attacks = {}
+					-- Infección Zombi: si los zombis capturan una capital, ¡la víctima se alza como zombi!
+					if self.mode == "ZOMBIES" and n.team == "ZOMBIE" then
+						tn.team = "ZOMBIE"
+						tn.color = Color3.fromRGB(50, 255, 70)
+						tn.name = "🧟 Zombi " .. vicName
+					end
+				end
 				for q = 1, cnt do
 					local j = nb[q]
 					if buffer.readu8(owner, j) == target and buffer.readu8(land, j) == 1 and #queue < 25000 then
@@ -1173,7 +1237,8 @@ end
 
 function Engine:retreat(n)
 	for k = #n.attacks, 1, -1 do
-		n.troops = math.min(self:maxTroops(n), n.troops + n.attacks[k].troops)
+		local returned = math.floor(math.max(0, n.attacks[k].troops) * 0.75)
+		n.troops = math.min(self:maxTroops(n), n.troops + returned)
 		table.remove(n.attacks, k)
 	end
 end
@@ -1182,6 +1247,9 @@ end
 function Engine:isAlly(a, b)
 	if a ~= nil and b ~= nil and a.allies and a.allies[b.id] then
 		return true -- alianza pactada entre jugadores/naciones
+	end
+	if a ~= nil and b ~= nil and a ~= b and a.team and a.team == b.team then
+		return true -- aliados del mismo bando (Rojo vs Azul, Zombis, etc.)
 	end
 	return self.teamMode == true
 		and a ~= nil
@@ -2018,11 +2086,41 @@ function Engine:tick(dt)
 		end
 	end
 
-	self.econAccum += dt
+	local econMult = if self.mode == "BLITZ" then 2.5 else 1.0
+	self.econAccum += dt * econMult
 	if self.econAccum >= 1 then
 		self.econAccum -= 1
 		self:economyStep()
 		self:checkWin()
+	end
+
+	-- Modo Battle Royale: la tormenta encoge los límites periódicamente
+	if self.mode == "BATTLE_ROYALE" and self.phase == "BATTLE" then
+		self.brTimer = (self.brTimer or 25) - dt
+		if self.brTimer <= 0 then
+			self.brTimer = 25
+			self.brStep = (self.brStep or 0) + 1
+			local shrink = self.brStep * 6
+			local w, h = self.w, self.h
+			local owner = self.owner
+			local killed = 0
+			for y = 0, h - 1 do
+				local outY = (y < shrink) or (y >= h - shrink)
+				for x = 0, w - 1 do
+					local outX = (x < shrink) or (x >= w - shrink)
+					if outY or outX then
+						local i = y * w + x
+						if buffer.readu8(owner, i) ~= 0 then
+							self:setOwner(i, 0)
+							killed += 1
+						end
+					end
+				end
+			end
+			if killed > 0 then
+				self:notify(nil, "🌪️ ¡La tormenta radiactiva avanzó hacia el centro! (" .. shrink .. " celdas de margen)")
+			end
+		end
 	end
 end
 
@@ -2221,3 +2319,4 @@ function Engine:getMe(n)
 end
 
 return Engine
+

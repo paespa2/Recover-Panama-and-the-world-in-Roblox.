@@ -29,11 +29,6 @@ WorldGrid.PLANETS = {
 		name = "Pangea (Era Cretácica)",
 		icon = "🦖",
 		kind = "pangea",
-		style = "pangea",
-		seed = 53,
-		freq = 1.6,
-		landA = { 112, 156, 74 }, -- selva cretácica
-		landB = { 186, 156, 98 }, -- tierra seca y arcilla
 		ocean = { 12, 66, 92 },
 		mid = { 22, 92, 118 },
 		shallow = { 44, 134, 150 },
@@ -44,7 +39,6 @@ WorldGrid.PLANETS = {
 		icon = "🔴",
 		kind = "noise",
 		seed = 11,
-		style = "mars",
 		freq = 1.7,
 		thr = 0.05,
 		ocean = { 46, 20, 18 },
@@ -59,7 +53,6 @@ WorldGrid.PLANETS = {
 		icon = "🌕",
 		kind = "noise",
 		seed = 23,
-		style = "moon",
 		freq = 2.5,
 		thr = 0.07,
 		ocean = { 22, 24, 32 },
@@ -74,7 +67,6 @@ WorldGrid.PLANETS = {
 		icon = "🟠",
 		kind = "noise",
 		seed = 37,
-		style = "venus",
 		freq = 1.5,
 		thr = 0.0,
 		ocean = { 104, 46, 18 },
@@ -94,82 +86,9 @@ WorldGrid.PLANETS = {
 		landA = { 255, 232, 176 },
 		landB = { 150, 120, 255 },
 	},
-	WORLD = {
-		id = "WORLD",
-		name = "Mundo FrontWars (61 Naciones)",
-		icon = "🌐",
-		kind = "frontwars",
-		mapId = "world",
-		ocean = { 14, 58, 110 },
-		mid = { 24, 82, 138 },
-		shallow = { 46, 118, 176 },
-	},
-	EUROPE = {
-		id = "EUROPE",
-		name = "Europa FrontWars (49 Naciones)",
-		icon = "🏰",
-		kind = "frontwars",
-		mapId = "europe",
-		ocean = { 18, 54, 104 },
-		mid = { 30, 78, 132 },
-		shallow = { 50, 112, 168 },
-	},
-	ASIA = {
-		id = "ASIA",
-		name = "Asia FrontWars (25 Naciones)",
-		icon = "🏯",
-		kind = "frontwars",
-		mapId = "asia",
-		ocean = { 16, 62, 115 },
-		mid = { 28, 86, 142 },
-		shallow = { 48, 122, 180 },
-	},
-	AFRICA = {
-		id = "AFRICA",
-		name = "África FrontWars (36 Naciones)",
-		icon = "🦁",
-		kind = "frontwars",
-		mapId = "africa",
-		ocean = { 14, 60, 112 },
-		mid = { 26, 84, 140 },
-		shallow = { 46, 120, 178 },
-	},
-	MENA = {
-		id = "MENA",
-		name = "Medio Oriente FrontWars (35 Naciones)",
-		icon = "🏜️",
-		kind = "frontwars",
-		mapId = "mena",
-		ocean = { 18, 64, 118 },
-		mid = { 32, 88, 146 },
-		shallow = { 52, 126, 184 },
-	},
-	OCEANIA = {
-		id = "OCEANIA",
-		name = "Oceanía FrontWars (32 Naciones)",
-		icon = "🏝️",
-		kind = "frontwars",
-		mapId = "oceania",
-		ocean = { 12, 70, 124 },
-		mid = { 24, 96, 154 },
-		shallow = { 48, 136, 196 },
-	},
 }
 
-WorldGrid.PLANET_ORDER = {
-	"EARTH",
-	"WORLD",
-	"EUROPE",
-	"ASIA",
-	"AFRICA",
-	"MENA",
-	"OCEANIA",
-	"PANGEA",
-	"MARS",
-	"MOON",
-	"VENUS",
-	"ANDROMEDA",
-}
+WorldGrid.PLANET_ORDER = { "EARTH", "PANGEA", "MARS", "MOON", "VENUS", "ANDROMEDA" }
 
 -- ============================================================================
 -- POLÍGONOS DE LA TIERRA (lon, lat, lon, lat, ...)
@@ -1606,45 +1525,6 @@ function WorldGrid.LatOfRow(y)
 	return LAT_TOP - (y + 0.5) * (LAT_TOP - LAT_BOT) / H
 end
 
--- Decodificador Base64 ultraligero y nativo para mapas de bits de FrontWars
-local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local B64_LUT = {}
-for i = 1, #B64_CHARS do
-	B64_LUT[string.byte(B64_CHARS, i)] = i - 1
-end
-
-local function decodeBase64ToBuffer(b64)
-	local len = #b64
-	local out = buffer.create(math.ceil(len * 3 / 4))
-	local outPos = 0
-	local i = 1
-	while i <= len do
-		local b1_raw = string.byte(b64, i)
-		if not b1_raw then
-			break
-		end
-		local c1 = B64_LUT[b1_raw] or 0
-		local c2 = B64_LUT[string.byte(b64, i + 1) or 65] or 0
-		local c3 = B64_LUT[string.byte(b64, i + 2) or 65] or 0
-		local c4 = B64_LUT[string.byte(b64, i + 3) or 65] or 0
-		i += 4
-
-		local b1 = bit32.bor(bit32.lshift(c1, 2), bit32.rshift(c2, 4))
-		local b2 = bit32.bor(bit32.lshift(bit32.band(c2, 15), 4), bit32.rshift(c3, 2))
-		local b3 = bit32.bor(bit32.lshift(bit32.band(c3, 3), 6), c4)
-
-		buffer.writeu8(out, outPos, b1)
-		if outPos + 1 < buffer.len(out) then
-			buffer.writeu8(out, outPos + 1, b2)
-		end
-		if outPos + 2 < buffer.len(out) then
-			buffer.writeu8(out, outPos + 2, b3)
-		end
-		outPos += 3
-	end
-	return out
-end
-
 -- ============================================================================
 -- GENERACIÓN DE LA MÁSCARA DE TIERRA
 -- ============================================================================
@@ -1695,27 +1575,6 @@ function WorldGrid.Generate(planetId)
 				end
 				if isLand then
 					buffer.writeu8(land, y * W + x, 1)
-				end
-			end
-		end
-	elseif def.kind == "frontwars" then
-		-- Carga el mapa de pixeles autentico de FrontWars.io desde el modulo modular
-		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
-		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
-		if mapModule then
-			local mapData = require(mapModule)
-			local maskBuf = decodeBase64ToBuffer(mapData.maskB64)
-			local mw, mh = mapData.w, mapData.h
-			for y = 0, H - 1 do
-				local my = math.floor((y / H) * mh)
-				for x = 0, W - 1 do
-					local mx = math.floor((x / W) * mw)
-					local bitIdx = my * mw + mx
-					local byteVal = buffer.readu8(maskBuf, bitIdx // 8)
-					local bit = bit32.band(bit32.rshift(byteVal, bitIdx % 8), 1)
-					if bit == 1 then
-						buffer.writeu8(land, y * W + x, 1)
-					end
 				end
 			end
 		end
@@ -1848,112 +1707,65 @@ local function loadSatellite()
 	return nil
 end
 
--- Relieve de los planetas procedurales (Marte, Luna, Venus): elevación en 3 octavas + rasgos propios de cada mundo
-local planetElev = nil -- u8 por celda (0..255)
-
-local function elevAt(x, y)
-	return buffer.readu8(planetElev, math.clamp(y, 0, H - 1) * W + (x % W))
-end
-
-local function computeElevation(def)
-	local e = buffer.create(W * H)
-	for y = 0, H - 1 do
-		for x = 0, W - 1 do
-			local v = 0.55 * cylNoise(x, y, def.freq * 1.3, def.seed + 2)
-				+ 0.3 * cylNoise(x, y, def.freq * 3.1, def.seed + 9)
-				+ 0.15 * cylNoise(x, y, def.freq * 7.0, def.seed + 17)
-			buffer.writeu8(e, y * W + x, math.clamp(math.floor((v + 0.6) / 1.2 * 255), 0, 255))
-		end
-	end
-	return e
-end
-
-local function planetPixel(def, x, y)
-	local r, g, b = mix3(def.landB, def.landA, elevAt(x, y) / 255)
-	local style = def.style
-	if style == "mars" then
-		-- Cañón largo y oscuro (estilo Valles Marineris) y casquetes polares helados
-		if math.abs(cylNoise(x, y, def.freq * 0.8, def.seed + 50)) < 0.035 then
-			r, g, b = r * 0.55, g * 0.5, b * 0.5
-		end
-		local pole = math.max(0, 1 - math.min(y, H - 1 - y) / (H * 0.07))
-		if pole > 0 then
-			r, g, b = lerp(r, 238, pole), lerp(g, 226, pole), lerp(b, 232, pole)
-		end
-	elseif style == "moon" then
-		-- Mares basálticos oscuros y cráteres con borde marcado
-		local maria = cylNoise(x, y, def.freq * 0.9, def.seed + 5)
-		if maria < -0.18 then
-			local k = math.clamp((-0.18 - maria) * 3, 0, 0.7)
-			r, g, b = lerp(r, 78, k), lerp(g, 80, k), lerp(b, 92, k)
-		end
-		if math.abs(cylNoise(x, y, def.freq * 5.5, def.seed + 23) - 0.22) < 0.018 then
-			r, g, b = r * 0.7, g * 0.7, b * 0.72
-		end
-	elseif style == "pangea" then
-		-- Tierras bajas con selva densa y cumbres de roca grisácea
-		local el = elevAt(x, y) / 255
-		if el < 0.32 then
-			r, g, b = lerp(r, 52, 0.45), lerp(g, 104, 0.45), lerp(b, 56, 0.45)
-		elseif el > 0.78 then
-			r, g, b = lerp(r, 150, 0.5), lerp(g, 140, 0.5), lerp(b, 128, 0.5)
-		end
-	elseif style == "venus" then
-		-- Canales de lava incandescente entre llanuras volcánicas
-		if math.abs(cylNoise(x, y, def.freq * 2.0, def.seed + 41)) < 0.03 then
-			r, g, b = lerp(r, 255, 0.75), lerp(g, 118, 0.75), lerp(b, 34, 0.75)
-		end
-	end
-	-- Sombreado direccional del relieve (luz desde el noroeste)
-	local dzdx = (elevAt(x + 1, y) - elevAt(x - 1, y)) / 255
-	local dzdy = (elevAt(x, y + 1) - elevAt(x, y - 1)) / 255
-	return r, g, b, math.clamp(1.0 - (dzdx + dzdy) * 2.4, 0.62, 1.4)
-end
+local baseCache = {}
+WorldGrid.LastBuildTimeMs = 0
 
 function WorldGrid.BuildBase(planetId, land)
 	local def = WorldGrid.PLANETS[planetId] or WorldGrid.PLANETS.EARTH
+	local cacheKey = def.id
+	if baseCache[cacheKey] then
+		WorldGrid.LastBuildTimeMs = 0
+		return baseCache[cacheKey]
+	end
+
+	local t0 = os.clock()
 	if def.kind == "earth" then
 		local satellite = loadSatellite()
 		if satellite then
+			baseCache[cacheKey] = satellite
+			WorldGrid.LastBuildTimeMs = (os.clock() - t0) * 1000
 			return satellite
 		end
 	end
 	local base = buffer.create(W * H * 3)
-	if def.kind == "noise" or def.kind == "pangea" then
-		planetElev = computeElevation(def)
-	end
 
 	local function isLand(x, y)
 		if y < 0 or y >= H then
 			return false
 		end
-		x = x % W
+		if x < 0 then
+			x += W
+		elseif x >= W then
+			x -= W
+		end
 		return buffer.readu8(land, y * W + x) == 1
 	end
 
 	for y = 0, H - 1 do
+		local rowOff = y * W
+		local upY = if y > 0 then y - 1 else 0
+		local downY = if y < H - 1 then y + 1 else H - 1
+		local ny = y * 0.1
+		local upNy = upY * 0.1
+		local downNy = downY * 0.1
+
 		for x = 0, W - 1 do
-			local i = y * W + x
+			local i = rowOff + x
 			local r, g, b
 
 			-- Sombreado de relieve 3D direccional (Sol desde el Noroeste)
-			local shade = 1.0
 			if buffer.readu8(land, i) == 1 then
 				local leftX = if x == 0 then W - 1 else x - 1
 				local rightX = if x == W - 1 then 0 else x + 1
-				local upY = math.max(0, y - 1)
-				local downY = math.min(H - 1, y + 1)
 
-				local hL = math.noise(leftX * 0.1, y * 0.1, 4.3)
-				local hR = math.noise(rightX * 0.1, y * 0.1, 4.3)
-				local hU = math.noise(x * 0.1, upY * 0.1, 4.3)
-				local hD = math.noise(x * 0.1, downY * 0.1, 4.3)
+				local hL = math.noise(leftX * 0.1, ny, 4.3)
+				local hR = math.noise(rightX * 0.1, ny, 4.3)
+				local hU = math.noise(x * 0.1, upNy, 4.3)
+				local hD = math.noise(x * 0.1, downNy, 4.3)
 
-				local dz_dx = (hR - hL) * 0.5
-				local dz_dy = (hD - hU) * 0.5
-				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
+				local shade = math.clamp(1.0 - ((hR - hL) + (hD - hU)) * 0.16, 0.72, 1.35)
 
-				if def.kind == "earth" or def.kind == "frontwars" then
+				if def.kind == "earth" or def.kind == "pangea" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
 						g = math.min(255, g + 14)
@@ -1962,18 +1774,10 @@ function WorldGrid.BuildBase(planetId, land)
 					local u = ((x + 0.5) / W) * 2 - 1
 					local v = ((y + 0.5) / H) * 2 - 1
 					local rr = math.min(1, math.sqrt(u * u + v * v) * 1.1)
-					-- Brazos espirales con polvo y estrellas dispersas
-					local theta = math.atan2(v, u)
-					local arm = (math.sin(2 * theta - rr * 9) + 1) * 0.5
-					local dust = (math.noise(x * 0.05, y * 0.07, 2.2) + 1) * 0.5
-					local k = math.clamp(arm * (1 - rr * 0.8) * 0.7 + dust * 0.35, 0, 1)
-					r, g, b = mix3(def.landB, def.landA, k)
-					if math.noise(x * 0.9, y * 0.9, 7.7) > 0.62 then
-						r, g, b = 255, 250, 230
-					end
+					r, g, b = mix3(def.landA, def.landB, rr)
 				else
 					local t = (math.noise(x * 0.16, y * 0.2, 4.4) + 1) * 0.5
-					r, g, b, shade = planetPixel(def, x, y)
+					r, g, b = mix3(def.landA, def.landB, t)
 				end
 				r, g, b = r * shade, g * shade, b * shade
 			else
@@ -1998,7 +1802,7 @@ function WorldGrid.BuildBase(planetId, land)
 				elseif near2 then
 					c = def.mid
 				end
-				local oceanShade = 1.0 + math.noise(x * 0.1, y * 0.1, 1.7) * 0.05
+				local oceanShade = 1.0 + math.noise(x * 0.1, ny, 1.7) * 0.05
 				r, g, b = c[1] * oceanShade, c[2] * oceanShade, c[3] * oceanShade
 			end
 
@@ -2008,6 +1812,8 @@ function WorldGrid.BuildBase(planetId, land)
 			buffer.writeu8(base, o + 2, math.clamp(math.floor(b), 0, 255))
 		end
 	end
+	baseCache[cacheKey] = base
+	WorldGrid.LastBuildTimeMs = (os.clock() - t0) * 1000
 	return base
 end
 

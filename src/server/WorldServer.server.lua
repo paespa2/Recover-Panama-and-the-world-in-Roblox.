@@ -37,7 +37,7 @@ local WorldRoster = remote("WorldRoster") -- una nación nueva (jugador que entr
 local WorldFx = remote("WorldFx") -- efectos visuales de las armas (explosiones, terremotos...)
 
 local engine = nil
-local config = { planet = "EARTH", bots = 40, difficulty = "NORMAL", mode = "FREE" }
+local config = { planet = "EARTH", bots = 35, difficulty = "NORMAL", mode = "FREE" }
 local humanNations = {} -- [Player] = nación
 local lastCommand = {}
 local endedAt = nil
@@ -89,6 +89,16 @@ local function newMatch(cfg)
 	end
 end
 
+local VALID_MODES = {
+	FREE = true,
+	TEAMS_2 = true,
+	CONTINENTS = true,
+	BLITZ = true,
+	ZOMBIES = true,
+	BATTLE_ROYALE = true,
+	COUNTRIES = true,
+}
+
 local function sanitize(cmd)
 	local planet = tostring(cmd.planet or "EARTH")
 	if not WorldGrid.PLANETS[planet] then
@@ -98,11 +108,11 @@ local function sanitize(cmd)
 	if not Engine.DIFFICULTY[difficulty] then
 		difficulty = "NORMAL"
 	end
-	local bots = math.clamp(math.floor(tonumber(cmd.bots) or 40), 0, 90)
-	-- El modo PAÍSES solo existe en la Tierra
-	local mode = "FREE"
-	if planet == "EARTH" and (cmd.mode == "COUNTRIES" or cmd.mode == "CONTINENTS") then
-		mode = cmd.mode
+	local bots = math.clamp(math.floor(tonumber(cmd.bots) or 35), 0, 90)
+	local rawMode = tostring(cmd.mode or "FREE")
+	local mode = if VALID_MODES[rawMode] then rawMode else "FREE"
+	if (mode == "COUNTRIES" or mode == "CONTINENTS") and planet ~= "EARTH" then
+		mode = "FREE"
 	end
 	return { planet = planet, bots = bots, difficulty = difficulty, mode = mode }
 end
@@ -300,3 +310,4 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 end)
+

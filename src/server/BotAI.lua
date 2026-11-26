@@ -644,3 +644,4 @@ function BotAI.autoplay(engine, n, mode, ratio)
 end
 
 return BotAI
+

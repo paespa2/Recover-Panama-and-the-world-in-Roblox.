@@ -11,6 +11,11 @@
 
 local GameConfig = {}
 
+-- Activa el renderizado HD mediante EditableImage cuando la experiencia tenga habilitada
+-- la opción "Allow Mesh / Image APIs" en Configuración del juego > Seguridad.
+-- Si está en false, el juego utiliza el renderizado por bloques sin lanzar excepciones.
+GameConfig.USE_EDITABLE_IMAGE = false
+
 GameConfig.VICTORY_PERCENTAGE = 0.65
 GameConfig.TICK_RATE = 1.0
 GameConfig.AI_DEFENSE_TICK = 0.75

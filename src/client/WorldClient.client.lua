@@ -14,6 +14,7 @@ local AssetService = game:GetService("AssetService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local WorldGrid = require(Shared:WaitForChild("WorldGrid"))
+local GameConfig = require(Shared:WaitForChild("GameConfig"))
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -112,7 +113,16 @@ local state = {
 	blockW = 0,
 	blockH = 0,
 	dirtyBlocks = {},
+	dirtyRect = { x0 = math.huge, y0 = math.huge, x1 = -1, y1 = -1 },
+	hasDirty = false,
 }
+
+-- Referencias de UIScale responsivo automático (1080p / 720p / Móvil)
+local radarScale = nil
+local zoomScale = nil
+local spawnScale = nil
+local modalScale = nil
+local topBarScale = nil
 
 -- ============================================================================
 -- CREACIÓN DE INTERFAZ DE USUARIO
@@ -151,7 +161,14 @@ mapContainer.Name = "MapContainer"
 mapContainer.Size = UDim2.fromScale(1, 1)
 mapContainer.BackgroundColor3 = Color3.fromRGB(8, 12, 20)
 mapContainer.ClipsDescendants = true
+mapContainer.Active = true
 mapContainer.Parent = root
+
+if workspace.CurrentCamera then
+	workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+end
+UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+UserInputService.MouseIconEnabled = true
 
 local mapCanvas = Instance.new("Frame")
 mapCanvas.Name = "MapCanvas"
@@ -293,6 +310,131 @@ local btnCenterCorner = Instance.new("UICorner")
 btnCenterCorner.CornerRadius = UDim.new(0, 4)
 btnCenterCorner.Parent = btnCenter
 
+-- Botón Configuración Táctica / Atajos
+local btnTactical = Instance.new("TextButton")
+btnTactical.Name = "BtnTactical"
+btnTactical.AnchorPoint = Vector2.new(1, 0.5)
+btnTactical.Position = UDim2.new(1, -506, 0.5, 0)
+btnTactical.Size = UDim2.fromOffset(116, 34)
+btnTactical.BackgroundColor3 = Color3.fromRGB(22, 36, 60)
+btnTactical.Font = Enum.Font.GothamBold
+btnTactical.Text = "⚙️ Táctica (H)"
+btnTactical.TextColor3 = Color3.fromRGB(245, 175, 45)
+btnTactical.TextSize = 12
+btnTactical.BorderSizePixel = 0
+btnTactical.ZIndex = 21
+btnTactical.Parent = topBar
+roundCorners(btnTactical, 4)
+
+-- Modal emergente de Configuración Táctica / Atajos rápidos (Tecla H o botón en barra superior)
+local tacticalModal = Instance.new("Frame")
+tacticalModal.Name = "TacticalConfigModal"
+tacticalModal.AnchorPoint = Vector2.new(0.5, 0.5)
+tacticalModal.Position = UDim2.fromScale(0.5, 0.5)
+tacticalModal.Size = UDim2.fromOffset(500, 270)
+tacticalModal.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
+tacticalModal.BorderSizePixel = 0
+tacticalModal.ZIndex = 85
+tacticalModal.Visible = false
+tacticalModal.Parent = root
+roundCorners(tacticalModal, 12)
+
+modalScale = Instance.new("UIScale")
+modalScale.Parent = tacticalModal
+
+local modalStroke = Instance.new("UIStroke")
+modalStroke.Color = Color3.fromRGB(45, 75, 120)
+modalStroke.Thickness = 2
+modalStroke.Parent = tacticalModal
+
+local modalTitle = Instance.new("TextLabel")
+modalTitle.BackgroundTransparency = 1
+modalTitle.Position = UDim2.fromOffset(20, 16)
+modalTitle.Size = UDim2.new(1, -60, 0, 22)
+modalTitle.Font = Enum.Font.GothamBlack
+modalTitle.Text = "CONFIGURACIÓN TÁCTICA"
+modalTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+modalTitle.TextSize = 18
+modalTitle.TextXAlignment = Enum.TextXAlignment.Left
+modalTitle.ZIndex = 86
+modalTitle.Parent = tacticalModal
+
+local modalSub = Instance.new("TextLabel")
+modalSub.BackgroundTransparency = 1
+modalSub.Position = UDim2.fromOffset(20, 40)
+modalSub.Size = UDim2.new(1, -60, 0, 16)
+modalSub.Font = Enum.Font.GothamBold
+modalSub.Text = "PREFERENCIAS DE INTERFAZ Y RENDIMIENTO"
+modalSub.TextColor3 = Color3.fromRGB(245, 175, 45)
+modalSub.TextSize = 11
+modalSub.TextXAlignment = Enum.TextXAlignment.Left
+modalSub.ZIndex = 86
+modalSub.Parent = tacticalModal
+
+local modalClose = Instance.new("TextButton")
+modalClose.AnchorPoint = Vector2.new(1, 0)
+modalClose.Position = UDim2.new(1, -16, 0, 16)
+modalClose.Size = UDim2.fromOffset(28, 28)
+modalClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+modalClose.BorderSizePixel = 0
+modalClose.Font = Enum.Font.GothamBlack
+modalClose.Text = "✕"
+modalClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+modalClose.TextSize = 14
+modalClose.ZIndex = 87
+modalClose.Parent = tacticalModal
+roundCorners(modalClose, 6)
+modalClose.MouseButton1Click:Connect(function()
+	tacticalModal.Visible = false
+end)
+
+local modalBullets = Instance.new("TextLabel")
+modalBullets.BackgroundTransparency = 1
+modalBullets.Position = UDim2.fromOffset(20, 68)
+modalBullets.Size = UDim2.new(1, -40, 0, 80)
+modalBullets.Font = Enum.Font.Gotham
+modalBullets.Text = "• Atajos rápidos: H (How to Play), M (Silenciar música), Esc (Cerrar menús)\n• Escalado Responsivo UIScale: ACTIVO (Automático 1080p / 720p / Móvil)\n• Renderizado de Fronteras Iluminadas (2 pasadas): ACTIVO\n• Actualización de Bloques Sucios (Dirty Rectangles): ACTIVO"
+modalBullets.TextColor3 = Color3.fromRGB(220, 230, 245)
+modalBullets.TextSize = 12
+modalBullets.TextXAlignment = Enum.TextXAlignment.Left
+modalBullets.TextWrapped = true
+modalBullets.ZIndex = 86
+modalBullets.Parent = tacticalModal
+
+local modalExtra = Instance.new("TextLabel")
+modalExtra.BackgroundTransparency = 1
+modalExtra.Position = UDim2.fromOffset(20, 154)
+modalExtra.Size = UDim2.new(1, -40, 0, 60)
+modalExtra.Font = Enum.Font.Gotham
+modalExtra.Text = "🖱 Controles: Clic en país o frontera para atacar · Arrastrar para paneo · Rueda para zoom\n⌨️ Construcción: 1-0 Teclado numérico (Ciudad, Fábrica, Puerto, SAM, etc.)\n🏳️ R: Retirada táctica · G: Modo Ataque · X: Modo Demolición"
+modalExtra.TextColor3 = Color3.fromRGB(150, 175, 205)
+modalExtra.TextSize = 11
+modalExtra.TextXAlignment = Enum.TextXAlignment.Left
+modalExtra.TextWrapped = true
+modalExtra.ZIndex = 86
+modalExtra.Parent = tacticalModal
+
+local commanderName = player.DisplayName or player.Name or "paespa"
+if commanderName == "" then
+	commanderName = "paespa"
+end
+
+local modalWelcome = Instance.new("TextLabel")
+modalWelcome.BackgroundTransparency = 1
+modalWelcome.Position = UDim2.fromOffset(20, 236)
+modalWelcome.Size = UDim2.new(1, -40, 0, 18)
+modalWelcome.Font = Enum.Font.GothamBold
+modalWelcome.Text = "Bienvenido, Comandante " .. commanderName
+modalWelcome.TextColor3 = Color3.fromRGB(90, 120, 160)
+modalWelcome.TextSize = 12
+modalWelcome.TextXAlignment = Enum.TextXAlignment.Left
+modalWelcome.ZIndex = 86
+modalWelcome.Parent = tacticalModal
+
+btnTactical.MouseButton1Click:Connect(function()
+	tacticalModal.Visible = not tacticalModal.Visible
+end)
+
 -- ============================================================================
 -- LEADERBOARD (Top Naciones + Tu posición destacada en Neón/Oro)
 -- ============================================================================
@@ -381,19 +523,19 @@ statsRow.Parent = bottomHUD
 
 local troopsCard = Instance.new("TextLabel")
 troopsCard.Name = "TroopsCard"
-troopsCard.Size = UDim2.fromOffset(215, 30) -- cabe "Tropas: 123456/654321 (+1234/s)"
+troopsCard.Size = UDim2.fromOffset(215, 30) -- estilo FrontWars: píldora roja destacada
 troopsCard.Position = UDim2.fromOffset(0, 2)
-troopsCard.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
+troopsCard.BackgroundColor3 = Color3.fromRGB(210, 60, 60)
 troopsCard.BorderSizePixel = 0
 troopsCard.Font = Enum.Font.GothamBlack
-troopsCard.Text = "⚔️ Tropas: 1,500 (+25/s)"
-troopsCard.TextColor3 = Color3.fromRGB(0, 230, 150)
+troopsCard.Text = "⚔️ 1.5K / 10.0K (+25)"
+troopsCard.TextColor3 = Color3.fromRGB(255, 255, 255)
 troopsCard.TextSize = 12
 troopsCard.ZIndex = 22
 troopsCard.Parent = statsRow
 
 local troopsCorner = Instance.new("UICorner")
-troopsCorner.CornerRadius = UDim.new(0, 4)
+troopsCorner.CornerRadius = UDim.new(0, 8)
 troopsCorner.Parent = troopsCard
 
 local goldCard = Instance.new("TextLabel")
@@ -770,6 +912,9 @@ local WEAPON_INFO = {
 	METEOR = { name = "Meteorito", icon = "☄️", cost = 650, radius = 7, color = Color3.fromRGB(255, 90, 40) },
 	QUAKE = { name = "Terremoto", icon = "🌋", cost = 550, radius = 13, color = Color3.fromRGB(200, 140, 80) },
 	NUKE = { name = "Nuclear", icon = "☢️", cost = 900, radius = 16, color = Color3.fromRGB(255, 255, 255) },
+	ATOM_BOMB = { name = "Bomba Atómica", icon = "☢️", cost = 600, radius = 9, color = Color3.fromRGB(255, 165, 35) },
+	HYDROGEN_BOMB = { name = "Bomba H", icon = "💥", cost = 1200, radius = 18, color = Color3.fromRGB(255, 65, 35) },
+	MIRV = { name = "Misil MIRV", icon = "☄️", cost = 2200, radius = 26, color = Color3.fromRGB(255, 45, 110) },
 }
 local WEAPON_ORDER = { "BOMB", "ARTILLERY", "METEOR", "QUAKE" }
 
@@ -880,6 +1025,9 @@ local FX_STYLE = {
 	METEOR = { color = Color3.fromRGB(255, 90, 40), time = 0.7, scar = 0.7 },
 	QUAKE = { color = Color3.fromRGB(200, 140, 80), time = 1.0, shake = 7 },
 	NUKE = { color = Color3.fromRGB(255, 255, 255), time = 1.2, shake = 12, scar = 1.0 },
+	ATOM_BOMB = { color = Color3.fromRGB(255, 175, 40), time = 0.85, shake = 8, scar = 0.85 },
+	HYDROGEN_BOMB = { color = Color3.fromRGB(255, 95, 35), time = 1.15, shake = 12, scar = 1.0 },
+	MIRV = { color = Color3.fromRGB(255, 60, 110), time = 1.25, shake = 14, scar = 1.05 },
 	VOLCANO = { color = Color3.fromRGB(255, 110, 30), time = 1.4, shake = 6, scar = 0.9 },
 	TORNADO = { color = Color3.fromRGB(215, 225, 235), time = 0.6 },
 	SANDSTORM = { color = Color3.fromRGB(225, 190, 120), time = 2.4 },
@@ -968,9 +1116,9 @@ do
 	end
 end
 
+local buildingFrames = {}
 local updateBuildings = function() end
 do
-	local buildingFrames = {}
 	local BUILDING_ICONS = {
 		City = "🏙️",
 		Factory = "🏭",
@@ -1033,7 +1181,11 @@ do
 			if stroke and ownerNation and ownerNation.color then
 				stroke.Color = ownerNation.color
 			end
-			f.Visible = true
+			local isMyOrSilo = (b.owner == state.myId) or (b.kind == "Silo")
+			f:SetAttribute("MyOrSilo", isMyOrSilo)
+			local rel = state.zoom / math.max(0.01, state.fit or state.zoom)
+			local show = (rel >= 1.35) or isMyOrSilo
+			f.Visible = show
 		end
 
 		for cell, f in pairs(buildingFrames) do
@@ -1044,21 +1196,68 @@ do
 	end
 end
 
+local function showCombatFloat(cell, text, color)
+	if not state.w or not state.h or cell < 0 or cell >= state.w * state.h then
+		return
+	end
+	local cx, cy = cell % state.w, cell // state.w
+	local lbl = Instance.new("TextLabel")
+	lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+	lbl.Position = UDim2.fromScale((cx + 0.5) / state.w, (cy + 0.5) / state.h)
+	lbl.Size = UDim2.fromOffset(80, 20)
+	lbl.BackgroundTransparency = 1
+	lbl.Font = Enum.Font.GothamBlack
+	lbl.Text = text
+	lbl.TextColor3 = color or Color3.fromRGB(255, 235, 80)
+	lbl.TextSize = 13
+	lbl.ZIndex = 35
+	lbl.Parent = mapCanvas
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(10, 15, 25)
+	stroke.Thickness = 1.5
+	stroke.Parent = lbl
+
+	local tw = TweenService:Create(
+		lbl,
+		TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Position = UDim2.fromScale((cx + 0.5) / state.w, (cy - 3.2) / state.h), TextTransparency = 1 }
+	)
+	tw:Play()
+	tw.Completed:Connect(function()
+		lbl:Destroy()
+	end)
+end
+
 local function playWeaponFx(fx)
 	if not state.initialized or type(fx) ~= "table" or not fx.cell or fx.cell >= state.w * state.h then
 		return
 	end
 	if fx.kind == "CAPITAL_SPAWN" then
-		-- Efecto de fundación de capital estilo FrontWars: 3 ondas concéntricas de pulso dorado
+		-- Efecto de fundación de capital estilo FrontWars: 4 ondas concéntricas de pulso que se expanden por el mundo
 		local d = (fx.r or 8) * 2 + 1
-		local col = fx.color or Color3.fromRGB(255, 215, 0)
-		for k = 0, 2 do
-			task.delay(k * 0.16, function()
-				fxCircle(fx.cell, 1, d * (0.8 + k * 0.4), col, 0.2, 0.85 + k * 0.2, 16)
+		local col = fx.color or Color3.fromRGB(0, 220, 255)
+		for k = 0, 3 do
+			task.delay(k * 0.15, function()
+				fxCircle(fx.cell, 1, d * (0.8 + k * 0.7), col, 0.25, 0.9 + k * 0.25, 18)
 			end)
 		end
-		fxCircle(fx.cell, 1, d * 0.5, Color3.new(1, 1, 1), 0.05, 0.55, 17)
+		fxCircle(fx.cell, 1, d * 0.6, Color3.new(1, 1, 1), 0.05, 0.6, 20)
 		playSound("SPAWN", 1.0, 0.6)
+		showCombatFloat(fx.cell, "👑 CAPITAL", Color3.fromRGB(255, 225, 60))
+		return
+	end
+	if fx.kind == "CAPITAL_FALL" then
+		local d = (fx.r or 12) * 2 + 1
+		for k = 0, 3 do
+			task.delay(k * 0.12, function()
+				fxCircle(fx.cell, 1, d * (0.6 + k * 0.5), Color3.fromRGB(255, 215, 0), 0.2, 0.8 + k * 0.2, 22)
+			end)
+		end
+		fxCircle(fx.cell, 1, d * 0.5, Color3.fromRGB(255, 255, 255), 0.05, 0.5, 24)
+		playSound("BOMB", 1.2, 0.8)
+		showToast("👑 ¡CAPITAL ENEMIGA CONQUISTADA!", Color3.fromRGB(255, 215, 0))
+		showCombatFloat(fx.cell, "💥 ¡ANEXADO! 👑", Color3.fromRGB(255, 215, 0))
 		return
 	end
 	if fx.kind == "BUILDING_PLACED" then
@@ -1217,9 +1416,9 @@ state.updateFronts = updateFronts
 -- los demás jugadores del servidor entran a la partida en curso.
 -- ============================================================================
 local selPlanet = "EARTH"
-local selBots = 40
+local selBots = 35
 local selDiff = "NORMAL"
-local selMode = "COUNTRIES"
+local selMode = "FREE"
 
 local COLOR_CARD = Color3.fromRGB(26, 36, 56)
 local COLOR_CARD_SEL = Color3.fromRGB(24, 70, 96)
@@ -1322,40 +1521,87 @@ lobbyLabel("MODO DE JUEGO", UDim2.fromOffset(28, 96), UDim2.fromOffset(440, 18),
 
 local MODES = {
 	{
-		id = "COUNTRIES",
-		icon = "🏳️",
-		name = "PAÍSES VS PAÍSES",
-		desc = "Elige un país real y conquista el mundo. Ideal para jugar con amigos.",
-		tag = "RECOMENDADO",
-	},
-	{
 		id = "FREE",
 		icon = "🌐",
-		name = "LIBRE",
-		desc = "Aparece donde quieras en el mapa y expándete desde cero.",
+		name = "FRONTWARS FFA",
+		desc = "Inicio 100% igualitario (1.5K tropas, 10K capacidad). Elige tu capital y conquista el mundo neutral.",
+		tag = "OFICIAL",
+	},
+	{
+		id = "TEAMS_2",
+		icon = "⚔️",
+		name = "2 EQUIPOS: ROJO vs AZUL",
+		desc = "Guerra bipolar: La mitad del mundo es Roja y la otra Azul. Aliados no se atacan y ganan juntos.",
+		tag = "EQUIPOS",
 	},
 	{
 		id = "CONTINENTS",
 		icon = "🧭",
-		name = "CONTINENTES",
-		desc = "Cada continente es un equipo: los aliados no se atacan. Gana el equipo con más del 55 % de la tierra.",
-		tag = "NUEVO",
+		name = "CONTINENTES UNIDOS",
+		desc = "Cada continente forma una alianza unida contra los otros continentes.",
+		tag = "ALIANZAS",
+	},
+	{
+		id = "BLITZ",
+		icon = "⚡",
+		name = "MODO RÁPIDO (BLITZ)",
+		desc = "Economía x2.5, producción de tropas acelerada. Partidas ultra rápidas y dinámicas.",
+		tag = "RÁPIDO",
+	},
+	{
+		id = "ZOMBIES",
+		icon = "🧟",
+		name = "INFECCIÓN ZOMBI",
+		desc = "Una horda zombi infectada devora el mapa. ¡Si tu nación cae, te unes a los infectados!",
+		tag = "SUPERVIVENCIA",
+	},
+	{
+		id = "BATTLE_ROYALE",
+		icon = "🌪️",
+		name = "BATTLE ROYALE",
+		desc = "Una zona de tormenta encoge los límites del mapa hacia el centro. ¡El último en pie gana!",
+		tag = "TORMENTA",
+	},
+	{
+		id = "COUNTRIES",
+		icon = "🏳️",
+		name = "HISTÓRICO ASIMÉTRICO",
+		desc = "Fronteras y naciones reales de la Tierra. Desafío asimétrico no competitivo.",
+		tag = "DESAFÍO",
 	},
 }
+
+local modesScroll = Instance.new("ScrollingFrame")
+modesScroll.Name = "ModesScroll"
+modesScroll.Position = UDim2.fromOffset(28, 120)
+modesScroll.Size = UDim2.fromOffset(444, 345)
+modesScroll.BackgroundTransparency = 1
+modesScroll.BorderSizePixel = 0
+modesScroll.ScrollBarThickness = 5
+modesScroll.ScrollBarImageColor3 = COLOR_ACCENT
+modesScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+modesScroll.CanvasSize = UDim2.new()
+modesScroll.ZIndex = 62
+modesScroll.Parent = lobbyCard
+
+local modesLayout = Instance.new("UIListLayout")
+modesLayout.SortOrder = Enum.SortOrder.LayoutOrder
+modesLayout.Padding = UDim.new(0, 8)
+modesLayout.Parent = modesScroll
 
 local modeCards = {}
 for i, m in ipairs(MODES) do
 	local card = Instance.new("TextButton")
 	card.Name = "Mode_" .. m.id
-	card.Position = UDim2.fromOffset(28, 120 + (i - 1) * 108)
-	card.Size = UDim2.fromOffset(440, 98)
+	card.LayoutOrder = i
+	card.Size = UDim2.new(1, -10, 0, 86)
 	card.BackgroundColor3 = COLOR_CARD
 	card.BorderSizePixel = 0
 	card.AutoButtonColor = not m.disabled
 	card.Text = ""
-	card.ZIndex = 62
-	card.Parent = lobbyCard
-	roundCorners(card, 12)
+	card.ZIndex = 63
+	card.Parent = modesScroll
+	roundCorners(card, 10)
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Thickness = 2
@@ -1364,52 +1610,52 @@ for i, m in ipairs(MODES) do
 
 	local icon = Instance.new("TextLabel")
 	icon.BackgroundTransparency = 1
-	icon.Position = UDim2.fromOffset(12, 0)
-	icon.Size = UDim2.fromOffset(58, 98)
+	icon.Position = UDim2.fromOffset(10, 0)
+	icon.Size = UDim2.fromOffset(48, 86)
 	icon.Font = Enum.Font.GothamBold
 	icon.Text = m.icon
-	icon.TextSize = 36
+	icon.TextSize = 30
 	icon.TextColor3 = Color3.fromRGB(255, 255, 255)
-	icon.ZIndex = 63
+	icon.ZIndex = 64
 	icon.Parent = card
 
 	local name = Instance.new("TextLabel")
 	name.BackgroundTransparency = 1
-	name.Position = UDim2.fromOffset(76, 14)
-	name.Size = UDim2.new(1, -90, 0, 22)
+	name.Position = UDim2.fromOffset(64, 10)
+	name.Size = UDim2.new(1, -78, 0, 20)
 	name.Font = Enum.Font.GothamBlack
 	name.Text = m.name
-	name.TextSize = 16
+	name.TextSize = 14
 	name.TextXAlignment = Enum.TextXAlignment.Left
 	name.TextColor3 = if m.disabled then Color3.fromRGB(120, 130, 150) else Color3.fromRGB(240, 246, 255)
-	name.ZIndex = 63
+	name.ZIndex = 64
 	name.Parent = card
 
 	local desc = Instance.new("TextLabel")
 	desc.BackgroundTransparency = 1
-	desc.Position = UDim2.fromOffset(76, 40)
-	desc.Size = UDim2.new(1, -92, 0, 48)
+	desc.Position = UDim2.fromOffset(64, 32)
+	desc.Size = UDim2.new(1, -80, 0, 46)
 	desc.Font = Enum.Font.Gotham
 	desc.Text = m.desc
-	desc.TextSize = 12
+	desc.TextSize = 11
 	desc.TextWrapped = true
 	desc.TextXAlignment = Enum.TextXAlignment.Left
 	desc.TextYAlignment = Enum.TextYAlignment.Top
 	desc.TextColor3 = Color3.fromRGB(150, 168, 196)
-	desc.ZIndex = 63
+	desc.ZIndex = 64
 	desc.Parent = card
 
 	if m.tag then
 		local tag = Instance.new("TextLabel")
 		tag.AnchorPoint = Vector2.new(1, 0)
-		tag.Position = UDim2.new(1, -10, 0, 10)
-		tag.Size = UDim2.fromOffset(104, 18)
+		tag.Position = UDim2.new(1, -8, 0, 8)
+		tag.Size = UDim2.fromOffset(98, 18)
 		tag.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
 		tag.Font = Enum.Font.GothamBlack
 		tag.Text = m.tag
-		tag.TextSize = 10
+		tag.TextSize = 9
 		tag.TextColor3 = Color3.fromRGB(255, 255, 255)
-		tag.ZIndex = 64
+		tag.ZIndex = 65
 		tag.Parent = card
 		roundCorners(tag, 9)
 	end
@@ -1518,16 +1764,70 @@ for i, n in ipairs(BOT_COUNTS) do
 	botChips[n] = chip
 end
 
--- Consejos de juego
-local tips = lobbyLabel(
-	"🖱 Clic en una frontera: atacar   ·   Clic derecho + arrastrar: mover el mapa   ·   Rueda: zoom\n🛡 La IA de Defensa protege tus fronteras; tú decides dónde construir y a quién atacar.",
-	UDim2.fromOffset(rightX, 398),
-	UDim2.fromOffset(396, 70),
-	Enum.Font.Gotham,
-	Color3.fromRGB(130, 148, 176),
-	11
-)
-tips.TextYAlignment = Enum.TextYAlignment.Top
+-- Tarjeta de Configuración Táctica idéntica a la especificación de referencia
+local tacticalCard = Instance.new("Frame")
+tacticalCard.Name = "TacticalCard"
+tacticalCard.Position = UDim2.fromOffset(rightX, 382)
+tacticalCard.Size = UDim2.fromOffset(396, 92)
+tacticalCard.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
+tacticalCard.BorderSizePixel = 0
+tacticalCard.ZIndex = 62
+tacticalCard.Parent = lobbyCard
+roundCorners(tacticalCard, 8)
+
+local tacticalCardStroke = Instance.new("UIStroke")
+tacticalCardStroke.Color = Color3.fromRGB(40, 58, 84)
+tacticalCardStroke.Thickness = 1
+tacticalCardStroke.Parent = tacticalCard
+
+local tacTitle = Instance.new("TextLabel")
+tacTitle.BackgroundTransparency = 1
+tacTitle.Position = UDim2.fromOffset(10, 6)
+tacTitle.Size = UDim2.new(1, -20, 0, 16)
+tacTitle.Font = Enum.Font.GothamBlack
+tacTitle.Text = "CONFIGURACIÓN TÁCTICA"
+tacTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+tacTitle.TextSize = 13
+tacTitle.TextXAlignment = Enum.TextXAlignment.Left
+tacTitle.ZIndex = 63
+tacTitle.Parent = tacticalCard
+
+local tacSub = Instance.new("TextLabel")
+tacSub.BackgroundTransparency = 1
+tacSub.Position = UDim2.fromOffset(10, 22)
+tacSub.Size = UDim2.new(1, -20, 0, 12)
+tacSub.Font = Enum.Font.GothamBold
+tacSub.Text = "PREFERENCIAS DE INTERFAZ Y RENDIMIENTO"
+tacSub.TextColor3 = Color3.fromRGB(245, 175, 45)
+tacSub.TextSize = 9
+tacSub.TextXAlignment = Enum.TextXAlignment.Left
+tacSub.ZIndex = 63
+tacSub.Parent = tacticalCard
+
+local tacBullets = Instance.new("TextLabel")
+tacBullets.BackgroundTransparency = 1
+tacBullets.Position = UDim2.fromOffset(10, 36)
+tacBullets.Size = UDim2.new(1, -20, 0, 42)
+tacBullets.Font = Enum.Font.Gotham
+tacBullets.Text = "• Atajos rápidos: H (How to Play), M (Silenciar música), Esc (Cerrar menús)\n• Escalado Responsivo UIScale: ACTIVO (Automático 1080p / 720p / Móvil)\n• Renderizado de Fronteras Iluminadas (2 pasadas): ACTIVO\n• Actualización de Bloques Sucios (Dirty Rectangles): ACTIVO"
+tacBullets.TextColor3 = Color3.fromRGB(215, 226, 242)
+tacBullets.TextSize = 9
+tacBullets.TextXAlignment = Enum.TextXAlignment.Left
+tacBullets.TextWrapped = true
+tacBullets.ZIndex = 63
+tacBullets.Parent = tacticalCard
+
+local tacWelcome = Instance.new("TextLabel")
+tacWelcome.BackgroundTransparency = 1
+tacWelcome.Position = UDim2.fromOffset(10, 78)
+tacWelcome.Size = UDim2.new(1, -20, 0, 12)
+tacWelcome.Font = Enum.Font.GothamBold
+tacWelcome.Text = "Bienvenido, Comandante " .. commanderName
+tacWelcome.TextColor3 = Color3.fromRGB(90, 115, 145)
+tacWelcome.TextSize = 9
+tacWelcome.TextXAlignment = Enum.TextXAlignment.Left
+tacWelcome.ZIndex = 63
+tacWelcome.Parent = tacticalCard
 
 -- ---- Barra inferior: estado del servidor y botón JUGAR ----
 local lobbyDivider = Instance.new("Frame")
@@ -1639,7 +1939,15 @@ for _, n in ipairs(BOT_COUNTS) do
 	end)
 end
 
-local MODE_NAMES = { COUNTRIES = "Países vs Países", CONTINENTS = "Continentes", FREE = "Libre" }
+local MODE_NAMES = {
+	FREE = "FrontWars FFA (Competitivo)",
+	TEAMS_2 = "2 Equipos (Rojo vs Azul)",
+	CONTINENTS = "Continentes Unidos",
+	BLITZ = "Modo Rápido (Blitz)",
+	ZOMBIES = "Infección Zombi",
+	BATTLE_ROYALE = "Battle Royale",
+	COUNTRIES = "Histórico Asimétrico",
+}
 local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
 
 function updateLobbyStatus()
@@ -1826,10 +2134,12 @@ local flashCount = 0
 -- Tu contorno es dorado y late. Con mucho zoom se usa el borde celda por celda del nivel de detalle.
 -- ----------------------------------------------------------------------------
 -- ============================================================================
--- FRONTERAS DE PÍXELES FINOS OPTIMIZADAS (VIEWPORT CULLING ESTILO FRONTWARS)
+-- RENDERIZADO DE FRONTERAS ILUMINADAS (2 PASADAS ESTILO FRONTWARS)
+-- Pasada 1: Halo exterior de resplandor neón difuso (Bloom / Glow)
+-- Pasada 2: Núcleo central brillante de alta saturación (Crisp Laser Core)
 -- ============================================================================
 local edgeLayer = Instance.new("Frame")
-edgeLayer.Name = "PixelEdgeLayer"
+edgeLayer.Name = "IlluminatedBorderLayer"
 edgeLayer.Size = UDim2.fromScale(1, 1)
 edgeLayer.BackgroundTransparency = 1
 edgeLayer.BorderSizePixel = 0
@@ -1837,19 +2147,32 @@ edgeLayer.Visible = true
 edgeLayer.ZIndex = 6
 edgeLayer.Parent = mapCanvas
 
-local MAX_VISIBLE_EDGES = 350
-local edgeFrames = {}
-local myEdges = {}
-local LINE_THICK_PX = 1.5
+local MAX_VISIBLE_EDGES = 600
+local edgeGlowFrames = {} -- Pasada 1 (Bloom / Resplandor)
+local edgeCoreFrames = {} -- Pasada 2 (Núcleo nítido de alta definición)
+local myGlowEdges = {}
+local myCoreEdges = {}
+local GLOW_THICK_PX = 4.5
+local CORE_THICK_PX = 1.6
 
--- Pre-instanciamos el pool fijo de frames (máximo 350 para 60 FPS garantizados)
 for i = 1, MAX_VISIBLE_EDGES do
-	local f = Instance.new("Frame")
-	f.BorderSizePixel = 0
-	f.ZIndex = 6
-	f.Visible = false
-	f.Parent = edgeLayer
-	edgeFrames[i] = f
+	local fg = Instance.new("Frame")
+	fg.Name = "Glow"
+	fg.BorderSizePixel = 0
+	fg.ZIndex = 6
+	fg.Visible = false
+	fg.BackgroundTransparency = 0.55
+	fg.Parent = edgeLayer
+	edgeGlowFrames[i] = fg
+
+	local fc = Instance.new("Frame")
+	fc.Name = "Core"
+	fc.BorderSizePixel = 0
+	fc.ZIndex = 7
+	fc.Visible = false
+	fc.BackgroundTransparency = 0.0
+	fc.Parent = edgeLayer
+	edgeCoreFrames[i] = fc
 end
 
 local function sameTeam(a, b)
@@ -1864,16 +2187,16 @@ state.sameTeam = sameTeam
 local function vividColor(c, id)
 	local h, s = c:ToHSV()
 	local k = ((id or 0) * 37) % 100 / 100
-	local sat = math.clamp(s * 1.45, 0.55, 0.9) + (k - 0.5) * 0.12
-	local val = 0.9 + k * 0.1
-	local hue = (h + (k - 0.5) * 0.04) % 1
-	return Color3.fromHSV(hue, math.clamp(sat, 0.45, 0.95), math.clamp(val, 0.85, 1))
+	local sat = math.clamp(s * 1.5, 0.65, 0.95)
+	local val = 0.95 + k * 0.05
+	local hue = (h + (k - 0.5) * 0.03) % 1
+	return Color3.fromHSV(hue, math.clamp(sat, 0.6, 1.0), math.clamp(val, 0.9, 1))
 end
 state.vividColor = vividColor
 
 local function edgeColor(ownerId)
 	if ownerId == state.myId then
-		return Color3.fromRGB(255, 235, 60)
+		return Color3.fromRGB(255, 235, 50)
 	end
 	local n = state.rosterById[ownerId]
 	if n and n.color then
@@ -1882,7 +2205,7 @@ local function edgeColor(ownerId)
 	return Color3.new(1, 1, 1)
 end
 
--- Actualiza los bordes visibles SOLO dentro de la pantalla del jugador (Viewport Culling)
+-- Actualiza los bordes iluminados visibles dentro del viewport (2 pasadas)
 local function refreshVisibleEdges()
 	local owner = state.owner
 	local w, h = state.w, state.h
@@ -1891,13 +2214,6 @@ local function refreshVisibleEdges()
 		return
 	end
 
-	local rel = state.zoom / (state.fit or state.zoom)
-	-- Con zoom alejado (mapa entero) las líneas de 1px causan lag y aliasing; los bloques bastan
-	if rel < 1.25 then
-		edgeLayer.Visible = false
-		table.clear(myEdges)
-		return
-	end
 	edgeLayer.Visible = true
 
 	local vs = mapContainer.AbsoluteSize
@@ -1907,6 +2223,10 @@ local function refreshVisibleEdges()
 		return
 	end
 
+	local rel = state.zoom / (state.fit or state.zoom)
+	local isFar = rel < 1.15
+	local step = if isFar then 2 else 1 -- Muestreo adaptativo para mantener 60 FPS fijos a cualquier zoom
+
 	local left = vs.X / 2 + state.pan.X - BASE_WIDTH * state.zoom / 2
 	local top = vs.Y / 2 + state.pan.Y - BASE_HEIGHT * state.zoom / 2
 	local x0 = math.clamp(math.floor(-left / cellW) - 1, 0, w - 1)
@@ -1914,31 +2234,49 @@ local function refreshVisibleEdges()
 	local y0 = math.clamp(math.floor(-top / cellH) - 1, 0, h - 1)
 	local y1 = math.clamp(math.ceil((vs.Y - top) / cellH) + 1, 0, h - 1)
 
-	table.clear(myEdges)
+	table.clear(myGlowEdges)
+	table.clear(myCoreEdges)
 	local edgeCount = 0
 
-	for y = y0, y1 do
+	for y = y0, y1, step do
 		local row = y * w
-		for x = x0, x1 do
+		for x = x0, x1, step do
 			local cell = row + x
 			local o = buffer.readu8(owner, cell)
 			if o ~= 0 then
-				local r = buffer.readu8(owner, row + (if x == w - 1 then 0 else x + 1))
+				local r = buffer.readu8(owner, row + (if x >= w - 1 then 0 else x + 1))
 				local d = if y < h - 1 then buffer.readu8(owner, (y + 1) * w + x) else 0
+				local col = edgeColor(o)
+				local coreCol = if o == state.myId then Color3.fromRGB(255, 255, 230) else col:Lerp(Color3.new(1, 1, 1), 0.35)
+				local isMe = (o == state.myId)
 
 				-- Borde derecho
 				if r ~= o and not sameTeam(r, o) then
 					edgeCount += 1
 					if edgeCount <= MAX_VISIBLE_EDGES then
-						local f = edgeFrames[edgeCount]
-						f.AnchorPoint = Vector2.new(0.5, 0)
-						f.Position = UDim2.fromScale((x + 1) / w, y / h)
-						f.Size = UDim2.new(0, LINE_THICK_PX, 1 / h, 0)
-						f.BackgroundColor3 = edgeColor(o)
-						f.BackgroundTransparency = 0.05
-						f.Visible = true
-						if o == state.myId then
-							myEdges[f] = true
+						local fg = edgeGlowFrames[edgeCount]
+						local fc = edgeCoreFrames[edgeCount]
+						local pos = UDim2.fromScale((x + 1) / w, y / h)
+						local gSize = UDim2.new(0, if isMe then 5.5 else GLOW_THICK_PX, step / h, 0)
+						local cSize = UDim2.new(0, CORE_THICK_PX, step / h, 0)
+
+						fg.AnchorPoint = Vector2.new(0.5, 0)
+						fg.Position = pos
+						fg.Size = gSize
+						fg.BackgroundColor3 = col
+						fg.BackgroundTransparency = if isMe then 0.38 else 0.55
+						fg.Visible = true
+
+						fc.AnchorPoint = Vector2.new(0.5, 0)
+						fc.Position = pos
+						fc.Size = cSize
+						fc.BackgroundColor3 = coreCol
+						fc.BackgroundTransparency = 0.0
+						fc.Visible = true
+
+						if isMe then
+							myGlowEdges[fg] = true
+							myCoreEdges[fc] = true
 						end
 					end
 				end
@@ -1947,15 +2285,29 @@ local function refreshVisibleEdges()
 				if d ~= o and not sameTeam(d, o) then
 					edgeCount += 1
 					if edgeCount <= MAX_VISIBLE_EDGES then
-						local f = edgeFrames[edgeCount]
-						f.AnchorPoint = Vector2.new(0, 0.5)
-						f.Position = UDim2.fromScale(x / w, (y + 1) / h)
-						f.Size = UDim2.new(1 / w, 0, 0, LINE_THICK_PX)
-						f.BackgroundColor3 = edgeColor(o)
-						f.BackgroundTransparency = 0.05
-						f.Visible = true
-						if o == state.myId then
-							myEdges[f] = true
+						local fg = edgeGlowFrames[edgeCount]
+						local fc = edgeCoreFrames[edgeCount]
+						local pos = UDim2.fromScale(x / w, (y + 1) / h)
+						local gSize = UDim2.new(step / w, 0, 0, if isMe then 5.5 else GLOW_THICK_PX)
+						local cSize = UDim2.new(step / w, 0, 0, CORE_THICK_PX)
+
+						fg.AnchorPoint = Vector2.new(0, 0.5)
+						fg.Position = pos
+						fg.Size = gSize
+						fg.BackgroundColor3 = col
+						fg.BackgroundTransparency = if isMe then 0.38 else 0.55
+						fg.Visible = true
+
+						fc.AnchorPoint = Vector2.new(0, 0.5)
+						fc.Position = pos
+						fc.Size = cSize
+						fc.BackgroundColor3 = coreCol
+						fc.BackgroundTransparency = 0.0
+						fc.Visible = true
+
+						if isMe then
+							myGlowEdges[fg] = true
+							myCoreEdges[fc] = true
 						end
 					end
 				end
@@ -1972,7 +2324,8 @@ local function refreshVisibleEdges()
 
 	-- Ocultar frames sobrantes del pool
 	for i = edgeCount + 1, MAX_VISIBLE_EDGES do
-		edgeFrames[i].Visible = false
+		edgeGlowFrames[i].Visible = false
+		edgeCoreFrames[i].Visible = false
 	end
 end
 
@@ -1980,24 +2333,29 @@ state.refreshEdges = refreshVisibleEdges
 state.rebuildEdges = refreshVisibleEdges
 
 local function updateCellEdges(cell)
-	-- Viewport Culling gestionado eficientemente en refreshVisibleEdges
 end
 
--- El contorno del jugador late con resplandor dorado (solo en frames activos)
+-- El contorno iluminado del jugador late con resplandor neón dorado
 local edgePulseAcc = 0
 RunService.Heartbeat:Connect(function(dt)
 	edgePulseAcc += dt
-	if edgePulseAcc < 0.15 then
+	if edgePulseAcc < 0.1 then
 		return
 	end
 	edgePulseAcc = 0
 	if not edgeLayer.Visible then
 		return
 	end
-	local k = (math.sin(os.clock() * 4) + 1) / 2
-	local c = Color3.fromRGB(255, 215, 40):Lerp(Color3.fromRGB(255, 255, 240), k)
-	for f in pairs(myEdges) do
-		f.BackgroundColor3 = c
+	local k = (math.sin(os.clock() * 5) + 1) / 2
+	local glowColor = Color3.fromRGB(255, 215, 30):Lerp(Color3.fromRGB(255, 245, 100), k)
+	local coreColor = Color3.fromRGB(255, 255, 200):Lerp(Color3.fromRGB(255, 255, 255), k)
+	local glowAlpha = 0.30 + k * 0.20
+	for fg in pairs(myGlowEdges) do
+		fg.BackgroundColor3 = glowColor
+		fg.BackgroundTransparency = glowAlpha
+	end
+	for fc in pairs(myCoreEdges) do
+		fc.BackgroundColor3 = coreColor
 	end
 end)
 
@@ -2036,8 +2394,8 @@ local function recolorBlock(bi)
 		if n then
 			local isMe = bestId == state.myId
 			finalColor = if isMe then n.color:Lerp(Color3.fromRGB(255, 235, 70), 0.25) else n.color
-			-- Territorio conquistado: color vivo de la nación sobre el mapa de relieve
-			transparency = if isMe then 0.20 elseif n.bot == false then 0.26 else 0.34
+			-- Territorio conquistado estilo FrontWars: color vivo pero translúcido para ver la geografía
+			transparency = if isMe then 0.25 elseif n.bot == false then 0.30 else 0.38
 		else
 			-- Continentes y tierra natural neutral: 100% transparente para que el relieve se vea limpio sin veladuras ni sombreados
 			finalColor = OCEAN_COLOR
@@ -2059,13 +2417,29 @@ end
 
 local function markBlockDirty(idx)
 	local w = state.w
-	local bi = ((idx // w) // BLOCK) * state.blockW + ((idx % w) // BLOCK) + 1
+	local bx = (idx % w) // BLOCK
+	local by = (idx // w) // BLOCK
+	local bi = by * state.blockW + bx + 1
 	state.dirtyBlocks[bi] = true
+	local dr = state.dirtyRect
+	if dr then
+		if bx < dr.x0 then dr.x0 = bx end
+		if bx > dr.x1 then dr.x1 = bx end
+		if by < dr.y0 then dr.y0 = by end
+		if by > dr.y1 then dr.y1 = by end
+	end
+	state.hasDirty = true
 end
 
 local function initEditableImage(w, h)
 	state.w = w
 	state.h = h
+
+	if not GameConfig.USE_EDITABLE_IMAGE then
+		warn("[WorldClient] USE_EDITABLE_IMAGE = false. Iniciando en modo seguro de bloques...")
+		initBlocks(w, h)
+		return
+	end
 
 	if not state.editableImage then
 		local ok, img = pcall(function()
@@ -2207,11 +2581,22 @@ local fullRedraw -- declarada aquí porque flushImage la usa al cambiar al modo 
 
 local function flushImage()
 	if state.blockMode then
+		if not state.hasDirty and not next(state.dirtyBlocks) then
+			return
+		end
 		for bi in pairs(state.dirtyBlocks) do
 			recolorBlock(bi)
 			state.dirtyBlocks[bi] = nil
 		end
-		state.detailDirty = true -- el nivel de detalle celda por celda se refresca con los cambios
+		if state.dirtyRect then
+			state.dirtyRect.x0, state.dirtyRect.y0 = math.huge, math.huge
+			state.dirtyRect.x1, state.dirtyRect.y1 = -1, -1
+		end
+		state.hasDirty = false
+		state.detailDirty = true
+		if state.refreshEdges then
+			state.refreshEdges()
+		end
 		return
 	end
 	if state.editableImage and state.pixelBuffer then
@@ -2371,6 +2756,15 @@ local function applyLabelZoom()
 				m.troops.Visible = show and m.troops.Text ~= ""
 				m.troops.Position = UDim2.fromOffset(0, ds / 2 + 2)
 			end
+		end
+	end
+
+	if buildingFrames then
+		for cell, f in pairs(buildingFrames) do
+			local cx, cy = cell % w, cell // w
+			local inView = (cx >= x0 and cx <= x1 and cy >= y0 and cy <= y1)
+			local isMyOrSilo = f:GetAttribute("MyOrSilo") == true
+			f.Visible = inView and ((rel >= 1.35) or isMyOrSilo)
 		end
 	end
 end
@@ -2671,6 +3065,24 @@ local function handleMapClick(cell)
 			ripple:Destroy()
 		end)
 
+		if isNeutral then
+			showCombatFloat(cell, "+1 🚩", Color3.fromRGB(0, 240, 160))
+		else
+			local sent = math.max(100, math.floor((state.troops or 1500) * (state.attackRatio or 0.2)))
+			showCombatFloat(cell, "-" .. troopText(sent) .. " ⚔️", Color3.fromRGB(255, 75, 75))
+		end
+
+		-- Desembarco naval si el ataque cruza océano hacia una isla o costa lejana
+		if state.me and state.me.capital and state.me.capital >= 0 then
+			local cap = state.me.capital
+			local dx = math.abs(cell % state.w - cap % state.w)
+			dx = math.min(dx, state.w - dx)
+			local dy = math.abs(cell // state.w - cap // state.w)
+			if dx * dx + dy * dy > 1600 then
+				playWeaponFx({ kind = "NAVAL_LANDING", from = cap, cell = cell })
+			end
+		end
+
 		-- Marcar objetivo para el flujo de tropas de partículas (neutral o enemigo)
 		state.recentTargetCell = cell
 		state.recentTargetTime = os.clock()
@@ -2686,6 +3098,10 @@ local function handleMapClick(cell)
 	elseif state.actionMode == "NUKE" then
 		WorldCommand:FireServer({ a = "NUKE", cell = cell })
 		setActionMode("ATTACK")
+		local cm = (_G :: any).ConquerMainMenu
+		if cm and cm.ClearSelectedSlot then
+			cm.ClearSelectedSlot()
+		end
 	end
 end
 
@@ -2804,6 +3220,8 @@ do
 	radarCard.ZIndex = 30
 	radarCard.Parent = root
 	roundCorners(radarCard, 8)
+	radarScale = Instance.new("UIScale")
+	radarScale.Parent = radarCard
 
 	local radarStroke = Instance.new("UIStroke")
 	radarStroke.Thickness = 1.5
@@ -2950,9 +3368,22 @@ local function zoomAt(screenPos, factor)
 end
 
 mapContainer.InputBegan:Connect(function(input)
+	local cm = (_G :: any).ConquerMainMenu
+	if cm then
+		if cm.IsBlockingMap and cm.IsBlockingMap() then
+			drag.active = false
+			return
+		end
+		if cm.IsPointOverHud and cm.IsPointOverHud(Vector2.new(input.Position.X, input.Position.Y)) then
+			return
+		end
+	end
+	if radialMenu.Visible then
+		radialMenu.Visible = false
+	end
 	local t = input.UserInputType
 	if t == Enum.UserInputType.MouseButton2 or t == Enum.UserInputType.MouseButton3 then
-		drag.active, drag.kind, drag.moved, drag.input = true, "pan", true, input
+		drag.active, drag.kind, drag.moved, drag.input = true, "pan", false, input
 	elseif t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
 		drag.active, drag.kind, drag.moved, drag.input = true, "click", false, input
 	else
@@ -2960,6 +3391,12 @@ mapContainer.InputBegan:Connect(function(input)
 	end
 	drag.start = Vector2.new(input.Position.X, input.Position.Y)
 	drag.startPan = state.pan
+end)
+
+UserInputService.WindowFocusReleased:Connect(function()
+	drag.active = false
+	drag.moved = false
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end)
 
 UserInputService.InputEnded:Connect(function(input)
@@ -2980,10 +3417,19 @@ UserInputService.InputEnded:Connect(function(input)
 			handleMapClick(cell)
 		end
 	elseif pressesPan and not drag.moved then
-		-- FrontWars.io: Clic derecho sobre territorio abre el Menú Radial rápido
-		local cell = screenToCell(Vector2.new(input.Position.X, input.Position.Y))
-		if cell >= 0 then
-			openRadialMenu(Vector2.new(input.Position.X, input.Position.Y), cell)
+		local cm = (_G :: any).ConquerMainMenu
+		if state.actionMode ~= "ATTACK" then
+			setActionMode("ATTACK")
+			if cm and cm.ClearSelectedSlot then
+				cm.ClearSelectedSlot()
+			end
+			showToast("⚔️ Modo ataque restaurado", Color3.fromRGB(0, 220, 255))
+		else
+			-- FrontWars.io: Clic derecho sobre territorio abre el Menú Radial rápido
+			local cell = screenToCell(Vector2.new(input.Position.X, input.Position.Y))
+			if cell >= 0 then
+				openRadialMenu(Vector2.new(input.Position.X, input.Position.Y), cell)
+			end
 		end
 	end
 	drag.active = false
@@ -2995,6 +3441,16 @@ UserInputService.InputChanged:Connect(function(input)
 		drag.active
 		and (t == Enum.UserInputType.MouseMovement or (t == Enum.UserInputType.Touch and input == drag.input))
 	then
+		if
+			t == Enum.UserInputType.MouseMovement
+			and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+			and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton3)
+		then
+			drag.active = false
+			drag.moved = false
+			return
+		end
 		local delta = Vector2.new(input.Position.X, input.Position.Y) - drag.start
 		if not drag.moved and delta.Magnitude >= PAN_THRESHOLD then
 			drag.moved = true
@@ -3006,6 +3462,10 @@ UserInputService.InputChanged:Connect(function(input)
 			updateMapTransform()
 		end
 	elseif t == Enum.UserInputType.MouseWheel then
+		local cm = (_G :: any).ConquerMainMenu
+		if cm and cm.IsBlockingMap and cm.IsBlockingMap() then
+			return
+		end
 		requestZoom(UserInputService:GetMouseLocation(), if input.Position.Z > 0 then 1.2 else 1 / 1.2)
 	end
 end)
@@ -3022,9 +3482,10 @@ UserInputService.TouchPinch:Connect(function(_positions, scale, _velocity, input
 	end
 end)
 
--- Teclado: WASD / flechas mueven la vista; Q / E acercan y alejan
+-- Teclado: WASD / flechas mueven la vista; Z / C (o Q / E sin MainMenu) acercan y alejan
 RunService.RenderStepped:Connect(function(dt)
-	if UserInputService:GetFocusedTextBox() or lobbyScreen.Visible then
+	local cm = (_G :: any).ConquerMainMenu
+	if UserInputService:GetFocusedTextBox() or lobbyScreen.Visible or (cm and cm.IsBlockingMap and cm.IsBlockingMap()) then
 		return
 	end
 	local function down(a, b)
@@ -3039,22 +3500,97 @@ RunService.RenderStepped:Connect(function(dt)
 		clampPan()
 		updateMapTransform()
 	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+	local zoomInKey = if cm then Enum.KeyCode.C else Enum.KeyCode.E
+	local zoomOutKey = if cm then Enum.KeyCode.Z else Enum.KeyCode.Q
+	if UserInputService:IsKeyDown(zoomInKey) or UserInputService:IsKeyDown(Enum.KeyCode.PageUp) then
 		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 + 2.5 * dt)
-	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+	elseif UserInputService:IsKeyDown(zoomOutKey) or UserInputService:IsKeyDown(Enum.KeyCode.PageDown) then
 		requestZoom(mapContainer.AbsolutePosition + mapContainer.AbsoluteSize / 2, 1 / (1 + 2.5 * dt))
-	elseif UserInputService:IsKeyDown(Enum.KeyCode.H) then
+	elseif UserInputService:IsKeyDown(Enum.KeyCode.F) then
 		fitToScreen()
 	end
 end)
 
--- FrontWars Hotkeys:
--- 1: Ciudad, 2: Fábrica, 3: Puerto, 4: Puesto Def., 5: SAM, 6: Barco Guerra, 7: Granja, 8: Mina, 9: Base Aérea, 0: Silo
+-- Sistema de Audio y Silenciado (Atajo M)
+local isMusicMuted = false
+local function toggleMusicMute()
+	isMusicMuted = not isMusicMuted
+	state.musicMuted = isMusicMuted
+	local SoundService = game:GetService("SoundService")
+	for _, inst in ipairs(SoundService:GetDescendants()) do
+		if inst:IsA("Sound") then
+			if isMusicMuted then
+				if not inst:GetAttribute("OrigVolume") then
+					inst:SetAttribute("OrigVolume", inst.Volume)
+				end
+				inst.Volume = 0
+			else
+				inst.Volume = inst:GetAttribute("OrigVolume") or 0.5
+			end
+		end
+	end
+	if isMusicMuted then
+		state.showToast("🔇 Música y audio silenciados [M]", Color3.fromRGB(240, 100, 100))
+	else
+		state.showToast("🔊 Audio y efectos activados [M]", Color3.fromRGB(100, 240, 140))
+	end
+end
+
+-- Cierre de ventanas y menús abiertos (Atajo Esc)
+local function closeOpenModals()
+	local closed = false
+	if tacticalModal and tacticalModal.Visible then
+		tacticalModal.Visible = false
+		closed = true
+	end
+	if lobbyScreen and lobbyScreen.Visible and state.initialized then
+		showLobby(false)
+		closed = true
+	end
+	local cp = root:FindFirstChild("CountryPanel")
+	if cp and cp.Visible then
+		cp.Visible = false
+		closed = true
+	end
+	return closed
+end
+
+-- FrontWars Hotkeys & Atajos rápidos:
+-- H: Configuración Táctica / How to Play
+-- M: Silenciar música y audio
+-- Esc: Cerrar menús y ventanas emergentes
+-- 1-0: Construcción rápida (Ciudad, Fábrica, Puerto, Puesto, SAM, Barco, Granja, Mina, Base Aérea, Silo)
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.One then
+	local cm = (_G :: any).ConquerMainMenu
+	if cm then
+		if input.KeyCode == Enum.KeyCode.R then
+			WorldCommand:FireServer({ a = "RETREAT" })
+			state.showToast("🏳️ Retirada ordenada: tropas devueltas al territorio", Color3.fromRGB(255, 180, 50))
+		elseif input.KeyCode == Enum.KeyCode.G then
+			setActionMode("ATTACK")
+			if cm.ClearSelectedSlot then
+				cm.ClearSelectedSlot()
+			end
+		elseif input.KeyCode == Enum.KeyCode.X then
+			setActionMode("DEMOLISH")
+			if cm.ClearSelectedSlot then
+				cm.ClearSelectedSlot()
+			end
+		end
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.H then
+		if tacticalModal then
+			tacticalModal.Visible = not tacticalModal.Visible
+		end
+	elseif input.KeyCode == Enum.KeyCode.M then
+		toggleMusicMute()
+	elseif input.KeyCode == Enum.KeyCode.Escape then
+		closeOpenModals()
+	elseif input.KeyCode == Enum.KeyCode.One then
 		setActionMode("BUILD_City")
 	elseif input.KeyCode == Enum.KeyCode.Two then
 		setActionMode("BUILD_Factory")
@@ -3173,6 +3709,8 @@ zoomBar.Size = UDim2.fromOffset(40, 178) -- 4 botones de 40 px con 6 px de separ
 zoomBar.BackgroundTransparency = 1
 zoomBar.ZIndex = 25
 zoomBar.Parent = root
+zoomScale = Instance.new("UIScale")
+zoomScale.Parent = zoomBar
 
 local zoomBarLayout = Instance.new("UIListLayout")
 zoomBarLayout.Padding = UDim.new(0, 6)
@@ -3306,6 +3844,7 @@ local detail = {
 	flashing = {},
 	flashCount = 0,
 }
+local FLASH_TIME = 0.9
 
 -- ¿La celda toca a otra de distinto dueño (u océano/libre)? Entonces dibuja su borde de color
 local function isBorderCell(cell, x, y, o)
@@ -3456,7 +3995,9 @@ RunService.RenderStepped:Connect(function()
 	-- Destellos de conquista en las celdas del detalle
 	local now = os.clock()
 	for f, d in pairs(detail.flashing) do
-		local a = (now - d.t0) / FLASH_TIME
+		local flashDur = FLASH_TIME or 0.9
+		local t0 = (d and d.t0) or now
+		local a = (now - t0) / flashDur
 		if a >= 1 or not f.Parent then
 			f.BackgroundColor3 = d.color
 			f.BackgroundTransparency = d.transp
@@ -3489,6 +4030,8 @@ spawnBanner.BorderSizePixel = 0
 spawnBanner.Visible = false
 spawnBanner.ZIndex = 40
 spawnBanner.Parent = root
+spawnScale = Instance.new("UIScale")
+spawnScale.Parent = spawnBanner
 
 local spawnBannerCorner = Instance.new("UICorner")
 spawnBannerCorner.CornerRadius = UDim.new(0, 12)
@@ -3569,15 +4112,15 @@ local function updateSpawnUI()
 	local countries = state.mode == "COUNTRIES"
 	local placed = state.me ~= nil and state.me.alive == true
 	local left = s.spawnTimer or 0
-	bannerTitle.Text = if countries then "🌍 ELIGE TU PAÍS" else "📍 ELIGE TU UBICACIÓN INICIAL"
+	bannerTitle.Text = if countries then "🏳️ HISTÓRICO: ELIGE TU PAÍS" else "🌐 FRONTWARS FFA: ELIGE TU CAPITAL"
 	if countries then
 		bannerSub.Text = if placed
 			then "Ya tienes país. Puedes cambiarlo haciendo clic en otro hasta que acabe el tiempo."
 			else "Haz clic sobre un país del mapa o elígelo en la lista (botón 🌍 Países). Los 🔒 ya tienen jugador."
 	else
 		bannerSub.Text = if placed
-			then "Ubicación fijada. Haz clic en otro punto libre para cambiarla antes de que acabe el tiempo."
-			else "Haz clic en cualquier terreno libre para colocar tu capital. El círculo verde indica que cabe; rojo, que está ocupado."
+			then "Capital fijada. Todos inician con 1.5K tropas y 10K capacidad igualitaria. Puedes cambiarla antes de que acabe el tiempo."
+			else "Haz clic en el mapa para colocar tu base capital. ¡Todos los jugadores inician con 1.5K tropas y 10K capacidad igualitaria!"
 	end
 	bannerTime.Text = "⏱ " .. left .. "s"
 	bannerBar.Size = UDim2.fromScale(math.clamp(left / math.max(1, s.spawnTotal or 25), 0, 1), 1)
@@ -3661,6 +4204,15 @@ local function spawnValid(cell)
 end
 
 local function pointerOverUI(mp)
+	local cm = (_G :: any).ConquerMainMenu
+	if cm then
+		if cm.IsBlockingMap and cm.IsBlockingMap() then
+			return true
+		end
+		if cm.IsPointOverHud and cm.IsPointOverHud(mp) then
+			return true
+		end
+	end
 	local panel = root:FindFirstChild("CountryPanel")
 	for _, ui in ipairs({ bottomHUD, leaderFrame, zoomBar, topBar, spawnBanner, panel or topBar }) do
 		if ui.Visible then
@@ -3805,6 +4357,15 @@ local function setHighlight(ownerId)
 end
 
 RunService.RenderStepped:Connect(function()
+	if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+	if not UserInputService.MouseIconEnabled then
+		UserInputService.MouseIconEnabled = true
+	end
+	if workspace.CurrentCamera and workspace.CurrentCamera.CameraType ~= Enum.CameraType.Scriptable then
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	end
 	local s = state.stats
 	local ready = state.initialized and state.owner ~= nil and not lobbyScreen.Visible
 	local spawning = ready and s ~= nil and s.phase == "SPAWN"
@@ -4191,6 +4752,10 @@ local function describeNation(ownerId)
 end
 
 RunService.RenderStepped:Connect(function()
+	if (_G :: any).ConquerMainMenu then
+		hoverTip.Visible = false
+		return
+	end
 	if not state.initialized or lobbyScreen.Visible or not state.owner then
 		hoverTip.Visible = false
 		return
@@ -4422,18 +4987,50 @@ countryConfirmCorner.Parent = countryConfirm
 local countryScale = Instance.new("UIScale")
 countryScale.Parent = countryPanel
 
+-- ============================================================================
+-- CONTROLADOR DE ESCALADO RESPONSIVO UISCALE (1080p / 720p / Móvil Automático)
+-- ============================================================================
 local function fitUI()
 	local vs = root.AbsoluteSize
 	if vs.X <= 0 or vs.Y <= 0 then
 		return
 	end
-	local s = math.clamp(math.min(vs.X / 1100, vs.Y / 700), 0.5, 1.1)
+
+	-- Modos de resolución de calidad táctica:
+	-- 1080p Desktop: vs.X >= 1500 or vs.Y >= 820 -> Escala 1.0 a 1.20
+	-- 720p Laptop / Tablet: vs.X entre 1000 y 1500 -> Escala 0.78 a 0.95
+	-- Móvil / Ventana pequeña: vs.X < 1000 or vs.Y < 580 -> Escala 0.52 a 0.75
+	local s = 1.0
+	if vs.X >= 1500 and vs.Y >= 820 then
+		s = math.clamp(math.min(vs.X / 1920, vs.Y / 1080) * 1.08, 0.95, 1.20)
+	elseif vs.X >= 1000 and vs.Y >= 600 then
+		s = math.clamp(math.min(vs.X / 1350, vs.Y / 760), 0.78, 0.95)
+	else
+		s = math.clamp(math.min(vs.X / 960, vs.Y / 540), 0.52, 0.75)
+	end
+
 	hudScale.Scale = s
 	leaderScale.Scale = s
 	countryScale.Scale = s
-	-- La altura se calcula en píxeles "sin escala" para que el panel llene el espacio libre sin desbordar
+	if radarScale then radarScale.Scale = s end
+	if zoomScale then zoomScale.Scale = s end
+	if spawnScale then spawnScale.Scale = s end
+	if modalScale then modalScale.Scale = s end
+
+	-- En pantallas estrechas (móviles / 720p) adaptamos botones para evitar solapamiento
+	local isCompact = vs.X < 1180 or s < 0.82
+	titleLabel.Visible = vs.X >= 1180
+	if isCompact then
+		btnTactical.Text = "⚙️ H"
+		btnTactical.Size = UDim2.fromOffset(56, 32)
+		btnTactical.Position = UDim2.new(1, -380, 0.5, 0)
+	else
+		btnTactical.Text = "⚙️ Táctica (H)"
+		btnTactical.Size = UDim2.fromOffset(116, 34)
+		btnTactical.Position = UDim2.new(1, -506, 0.5, 0)
+	end
+
 	countryPanel.Size = UDim2.fromOffset(290, math.max(220, (vs.Y - 210) / s))
-	titleLabel.Visible = vs.X >= 1180 -- en pantallas estrechas el título chocaría con los botones
 end
 root:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitUI)
 fitUI()
@@ -5312,3 +5909,151 @@ task.spawn(
 -- La partida empieza cuando el jugador pulsa JUGAR en la pantalla de lobby (ver LobbyScreen).
 
 updateMapTransform()
+
+-- Puente limpio hacia ConquerMainMenu (envuelto en do..end para no consumir variables locales del ámbito raíz)
+do
+	local function sampleCellBiome(cell, w, h)
+		local cx = cell % w
+		local cy = cell // w
+		local land = state.land
+		if buffer.readu8(land, cell) ~= 1 then
+			return "Océano"
+		end
+		local leftIdx = cy * w + (if cx == 0 then w - 1 else cx - 1)
+		local rightIdx = cy * w + (if cx == w - 1 then 0 else cx + 1)
+		local touchesWater = buffer.readu8(land, leftIdx) == 0
+			or buffer.readu8(land, rightIdx) == 0
+			or (cy > 0 and buffer.readu8(land, cell - w) == 0)
+			or (cy < h - 1 and buffer.readu8(land, cell + w) == 0)
+		if touchesWater then
+			return "Valle costero"
+		end
+		local lat = math.abs(cy / math.max(1, h) - 0.5) * 2
+		if lat > 0.72 then
+			return "Tundra ártica"
+		elseif lat < 0.22 then
+			return "Selva tropical"
+		elseif ((cx * 13 + cy * 7) % 5) == 0 then
+			return "Montañas"
+		end
+		return "Llanuras"
+	end
+
+	(_G :: any).WorldClientBridge = {
+		getState = function()
+			return state
+		end,
+		setAttackRatio = function(ratio)
+			state.attackRatio = math.clamp(tonumber(ratio) or 0.2, 0.05, 1)
+			if state.sendAuto and state.autoMode and state.autoMode ~= "OFF" then
+				state.sendAuto()
+			end
+		end,
+		getAttackRatio = function()
+			return state.attackRatio
+		end,
+		setActionMode = function(mode)
+			if type(mode) == "string" then
+				setActionMode(mode)
+			end
+		end,
+		getActionMode = function()
+			return state.actionMode
+		end,
+		centerMap = function()
+			if state.me and state.me.capital and state.me.capital >= 0 then
+				focusCell(state.me.capital, math.max(state.zoom, fitZoom() * 2.2))
+			else
+				fitToScreen()
+			end
+		end,
+		fitWorld = function()
+			fitToScreen()
+		end,
+		cellToGuiPos = function(cellIdx)
+			if not state.initialized or not state.w or not state.h then
+				return nil
+			end
+			return cellToScreen(cellIdx)
+		end,
+		inspectGuiPos = function(guiPos)
+			if not state.initialized or not state.land or not state.owner then
+				return { valid = false }
+			end
+			local cell = screenToCell(guiPos)
+			local w, h = state.w, state.h
+			if cell < 0 or cell >= w * h then
+				return { valid = false }
+			end
+			local isLand = buffer.readu8(state.land, cell) == 1
+			local cx = cell % w
+			local cy = cell // w
+			local isCoastal = false
+			if isLand then
+				local leftIdx = cy * w + (if cx == 0 then w - 1 else cx - 1)
+				local rightIdx = cy * w + (if cx == w - 1 then 0 else cx + 1)
+				isCoastal = buffer.readu8(state.land, leftIdx) == 0
+					or buffer.readu8(state.land, rightIdx) == 0
+					or (cy > 0 and buffer.readu8(state.land, cell - w) == 0)
+					or (cy < h - 1 and buffer.readu8(state.land, cell + w) == 0)
+			end
+			local biome = sampleCellBiome(cell, w, h)
+			local ownerId = buffer.readu8(state.owner, cell)
+			local isSpawnValid = if isLand then spawnValid(cell) else false
+			local n = if ownerId ~= 0 then state.rosterById[ownerId] else nil
+			local st = if ownerId ~= 0 and state.statById then state.statById[ownerId] else nil
+			local hu = if ownerId ~= 0 and state.humanById then state.humanById[ownerId] else nil
+			local landCount = (state.stats and state.stats.landCount) or 1
+			local cells = (st and st.cells) or (n and n.cells) or 0
+			local troops = (st and st.troops) or 0
+			local isAlly = false
+			if ownerId ~= 0 and state.me and state.me.ally and state.me.ally.allies then
+				for _, aid in ipairs(state.me.ally.allies) do
+					if aid == ownerId then
+						isAlly = true
+						break
+					end
+				end
+			end
+			local hasPortInRange = false
+			local hasOwnBuilding = false
+			if state.me and state.me.buildings then
+				for _, b in ipairs(state.me.buildings) do
+					if b.cell == cell and ownerId == state.myId then
+						hasOwnBuilding = true
+					end
+					if b.kind == "Port" and b.cell then
+						local px = b.cell % w
+						local py = b.cell // w
+						local dx = math.abs(px - cx)
+						dx = math.min(dx, w - dx)
+						local dy = py - cy
+						if dx * dx + dy * dy <= 140 * 140 then
+							hasPortInRange = true
+						end
+					end
+				end
+			end
+			return {
+				valid = true,
+				cell = cell,
+				isLand = isLand,
+				isCoastal = isCoastal,
+				biome = biome,
+				spawnValid = isSpawnValid,
+				ownerId = ownerId,
+				isMe = (ownerId ~= 0 and ownerId == state.myId),
+				isAlly = isAlly,
+				isBot = if n then (n.bot ~= false and hu == nil) else true,
+				name = (hu and hu.name) or (n and n.name) or nil,
+				color = n and n.color or nil,
+				troops = troops,
+				cells = cells,
+				landPct = (cells / math.max(1, landCount)) * 100,
+				hasPortInRange = hasPortInRange,
+				hasOwnBuilding = hasOwnBuilding,
+			}
+		end,
+	}
+end
+

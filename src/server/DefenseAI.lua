@@ -294,3 +294,4 @@ function DefenseAI.StepRivalBotNation(
 end
 
 return DefenseAI
+
