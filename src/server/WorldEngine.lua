@@ -23,8 +23,8 @@ local Engine = {}
 Engine.__index = Engine
 
 local SPAWN_SECONDS = 25
-local WIN_RATIO = 0.65
-local START_TROOPS = 3000
+local WIN_RATIO = 0.80 -- OpenFront.io: 80% del mapa requerido para victoria
+local START_TROOPS = 10000 -- OpenFront.io: Inicio competitivo igualitario (10K tropas)
 local NUKE_COST = 900
 local NUKE_RADIUS = 16
 local POST_RADIUS = 20
@@ -621,7 +621,12 @@ function Engine:removeBuilding(b)
 end
 
 function Engine:maxTroops(n)
-	return 10000 + n.cells * 25 + n.cities * 15000
+	-- Fórmula oficial OpenFront.io (Config.ts):
+	-- maxTroops = 2 * (cells^0.6 * 1000 + 50000) + cities * 25000
+	-- Garantiza equilibrio competitivo: todos inician con ~100K de capacidad base
+	local cells = math.max(1, n.cells or 1)
+	local cities = n.cities or 0
+	return math.floor(2 * (math.pow(cells, 0.6) * 1000 + 50000) + cities * 25000)
 end
 
 function Engine:spawnNation(n, cell)
@@ -722,7 +727,7 @@ function Engine:initCountries()
 	for _, n in ipairs(self.list) do
 		n.spawned = true
 		n.alive = n.cells > 0
-		n.troops = math.clamp(1500 + n.cells * 5, 1500, 60000)
+		n.troops = START_TROOPS -- OpenFront.io: equilibrio competitivo idéntico para todos al spawn
 	end
 	self.changes = {} -- el estado inicial viaja en el snapshot, no como diferencias
 end
@@ -1143,7 +1148,7 @@ function Engine:processAttack(n, atk)
 							dx = math.min(dx, w - dx)
 							local dy = math.abs(py - cy)
 							if dx * dx + dy * dy <= POST_RADIUS * POST_RADIUS then
-								cost *= 2.0
+								cost *= 4.5 -- OpenFront.io: Puesto de defensa multiplica bajas enemigas hasta x4.5-x6
 								break
 							end
 						end
@@ -1225,7 +1230,9 @@ end
 
 function Engine:retreat(n)
 	for k = #n.attacks, 1, -1 do
-		n.troops = math.min(self:maxTroops(n), n.troops + n.attacks[k].troops)
+		-- Penalización OpenFront.io por retirada: 25% de bajas inmediatas, retorna el 75%
+		local returned = math.floor(math.max(0, n.attacks[k].troops) * 0.75)
+		n.troops = math.min(self:maxTroops(n), n.troops + returned)
 		table.remove(n.attacks, k)
 	end
 end
@@ -1405,18 +1412,55 @@ function Engine:playerAttack(n, cell, ratio)
 	if ok then
 		return true
 	end
-	-- Sin frontera: intentar desembarco desde un puerto
+	-- Sin frontera: desembarco naval estilo OpenFront.io (TransportShip / Buque)
 	if msg and string.find(msg, "frontera") then
-		for _, port in ipairs(n.ports) do
-			if self:cellDistance(port.cell, cell) <= PORT_RANGE then
-				local lok, lmsg = self:landing(n, cell, math.max(300, math.floor(n.troops * ratio * 0.5)))
-				if lok then
-					self:notify(n.userId, "⚓ ¡Desembarco exitoso! Expandiéndote desde la costa")
-					self:fx("NAVAL_LANDING", cell, 6, port.cell)
-					return true
-				end
-				return false, lmsg
+		local launchCell = nil
+		local minPortDist = 999999
+		for _, port in ipairs(n.ports or {}) do
+			local d = self:cellDistance(port.cell, cell)
+			if d <= 300 and d < minPortDist then
+				minPortDist = d
+				launchCell = port.cell
 			end
+		end
+		-- Si no hay puertos construidos, usar la celda costera propia más cercana
+		if not launchCell then
+			local w, h = self.w, self.h
+			local bestDist = 999999
+			local nb = self._nb
+			for c = 0, self.size - 1 do
+				if buffer.readu8(self.owner, c) == n.id then
+					local cnt = self:neighbors(c, nb)
+					local isCoast = false
+					for k = 1, cnt do
+						if buffer.readu8(self.land, nb[k]) == 0 then
+							isCoast = true
+							break
+						end
+					end
+					if isCoast then
+						local d = self:cellDistance(c, cell)
+						if d < bestDist and d <= 320 then
+							bestDist = d
+							launchCell = c
+						end
+					end
+				end
+			end
+		end
+
+		if launchCell then
+			local boatTroops = math.max(250, math.floor(n.troops * ratio * 0.20))
+			local lok, lmsg = self:landing(n, cell, boatTroops)
+			if lok then
+				self:notify(n.userId, "⚓ ¡Invasión naval! Barco de transporte desembarcó en la costa")
+				if target ~= 0 and self.nations[target] and self.nations[target].userId then
+					self:notify(self.nations[target].userId, "⚠️ ¡Invasión naval enemiga desembarcando en tus costas!")
+				end
+				self:fx("NAVAL_LANDING", cell, 6, launchCell)
+				return true
+			end
+			return false, lmsg
 		end
 	end
 	return false, msg
@@ -1903,19 +1947,22 @@ function Engine:economyStep()
 			else
 				local maxT = self:maxTroops(n)
 				local mult = if n.isBot then self.diff.growth else 1
-				-- Curva de interés compuesto estilo Territorial.io / FrontWars.io:
-				-- Granja (+35 tropas base/s), Mina (+10 oro/s), Fábrica con enlace de tren (+15 oro/s), Barcos de guerra (+5 defensa)
 				local farms = n.farms or 0
 				local mines = n.mines or 0
 				local factories = n.factories or 0
-				local interest = n.troops * 0.038 * math.max(0, 1 - (n.troops / maxT))
-				local baseGrowth = (15 + n.cells * 0.45 + n.cities * 25 + farms * 35) * mult
-				local g = (baseGrowth + interest) * math.max(0.1, 1 - (n.troops / (maxT * 1.05)))
+				
+				-- Fórmula OpenFront.io (Config.ts):
+				-- toAdd = (10 + (troops^0.73) / 4) * (1 - troops / maxTroops) por tick
+				-- Escalada a economía por segundo (10 ticks):
+				local troopRatio = math.clamp(n.troops / math.max(1, maxT), 0, 1)
+				local openFrontBase = 10 * (10 + (math.pow(math.max(1, n.troops), 0.73) / 4)) * (1 - troopRatio)
+				local bonusGrowth = (farms * 35 + (n.cities or 0) * 25)
+				local g = (openFrontBase * mult + bonusGrowth) * math.max(0.05, 1 - troopRatio)
 				local troopsBefore = n.troops
 				n.troops = math.min(maxT, n.troops + g)
-				local goldGain = 2.0 + n.cells * 0.08 + n.cities * 5 + mines * 10 + factories * 15 + (#n.ports * 6)
+				local goldGain = 2.0 + n.cells * 0.08 + (n.cities or 0) * 5 + mines * 10 + factories * 15 + (#n.ports * 6)
 				n.gold += goldGain
-				-- Ritmos reales por segundo (el HUD los muestra tal cual; antes usaba una fórmula inventada)
+				-- Ritmos reales por segundo mostrados en el HUD
 				n.troopRate = n.troops - troopsBefore
 				n.goldRate = goldGain
 
@@ -2257,6 +2304,7 @@ function Engine:getStats()
 		taken = taken,
 		humans = players, -- no se llama "players": WorldServer ya usa ese campo para el número de jugadores del servidor
 		phase = self.phase,
+		time = self.time,
 		spawnTotal = SPAWN_SECONDS,
 		spawnTimer = math.max(0, math.ceil(self.spawnTimer)),
 		winner = self.winner,

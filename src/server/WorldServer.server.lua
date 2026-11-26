@@ -37,7 +37,7 @@ local WorldRoster = remote("WorldRoster") -- una nación nueva (jugador que entr
 local WorldFx = remote("WorldFx") -- efectos visuales de las armas (explosiones, terremotos...)
 
 local engine = nil
-local config = { planet = "EARTH", bots = 35, difficulty = "NORMAL", mode = "FREE" }
+local config = { planet = "WORLD", bots = 35, difficulty = "NORMAL", mode = "FREE" }
 local humanNations = {} -- [Player] = nación
 local lastCommand = {}
 local endedAt = nil
@@ -100,9 +100,12 @@ local VALID_MODES = {
 }
 
 local function sanitize(cmd)
-	local planet = tostring(cmd.planet or "EARTH")
-	if not WorldGrid.PLANETS[planet] then
-		planet = "EARTH"
+	local rawPlanet = tostring(cmd.planet or "WORLD")
+	local planet = "WORLD"
+	if WorldGrid.PLANETS[rawPlanet] then
+		planet = WorldGrid.PLANETS[rawPlanet].id
+	elseif WorldGrid.PLANETS[string.upper(rawPlanet)] then
+		planet = WorldGrid.PLANETS[string.upper(rawPlanet)].id
 	end
 	local difficulty = tostring(cmd.difficulty or "NORMAL")
 	if not Engine.DIFFICULTY[difficulty] then
@@ -111,7 +114,7 @@ local function sanitize(cmd)
 	local bots = math.clamp(math.floor(tonumber(cmd.bots) or 35), 0, 90)
 	local rawMode = tostring(cmd.mode or "FREE")
 	local mode = if VALID_MODES[rawMode] then rawMode else "FREE"
-	if (mode == "COUNTRIES" or mode == "CONTINENTS") and planet ~= "EARTH" then
+	if (mode == "COUNTRIES" or mode == "CONTINENTS") and planet ~= "EARTH" and planet ~= "WORLD" then
 		mode = "FREE"
 	end
 	return { planet = planet, bots = bots, difficulty = difficulty, mode = mode }

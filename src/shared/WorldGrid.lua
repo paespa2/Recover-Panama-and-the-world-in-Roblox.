@@ -25,28 +25,35 @@ WorldGrid.PLANETS = {
 		shallow = { 46, 118, 176 },
 	},
 	PANGEA = {
-		id = "PANGEA",
-		name = "Pangea (Era Cretácica)",
+		id = "PANGAEA",
+		name = "Pangea (Supercontinente)",
 		icon = "🦖",
-		kind = "pangea",
-		style = "pangea",
-		seed = 53,
-		freq = 1.6,
-		landA = { 112, 156, 74 }, -- selva cretácica
-		landB = { 186, 156, 98 }, -- tierra seca y arcilla
+		kind = "frontwars",
+		mapId = "pangaea",
 		ocean = { 12, 66, 92 },
 		mid = { 22, 92, 118 },
 		shallow = { 44, 134, 150 },
+		landA = { 112, 156, 74 },
+		landB = { 186, 156, 98 },
+	},
+	PANGAEA = {
+		id = "PANGAEA",
+		name = "Pangea (Supercontinente)",
+		icon = "🦖",
+		kind = "frontwars",
+		mapId = "pangaea",
+		ocean = { 12, 66, 92 },
+		mid = { 22, 92, 118 },
+		shallow = { 44, 134, 150 },
+		landA = { 112, 156, 74 },
+		landB = { 186, 156, 98 },
 	},
 	MARS = {
 		id = "MARS",
 		name = "Marte (Planeta Rojo)",
 		icon = "🔴",
-		kind = "noise",
-		seed = 11,
-		style = "mars",
-		freq = 1.7,
-		thr = 0.05,
+		kind = "frontwars",
+		mapId = "mars",
 		ocean = { 46, 20, 18 },
 		mid = { 66, 30, 24 },
 		shallow = { 92, 44, 30 },
@@ -157,19 +164,31 @@ WorldGrid.PLANETS = {
 }
 
 WorldGrid.PLANET_ORDER = {
-	"EARTH",
 	"WORLD",
 	"EUROPE",
 	"ASIA",
 	"AFRICA",
-	"MENA",
-	"OCEANIA",
-	"PANGEA",
+	"PANGAEA",
 	"MARS",
+	"OCEANIA",
+	"MENA",
+	"EARTH",
 	"MOON",
 	"VENUS",
 	"ANDROMEDA",
 }
+
+-- Alias insensibles a mayúsculas para compatibilidad total con OpenFront
+WorldGrid.PLANETS.world = WorldGrid.PLANETS.WORLD
+WorldGrid.PLANETS.europe = WorldGrid.PLANETS.EUROPE
+WorldGrid.PLANETS.asia = WorldGrid.PLANETS.ASIA
+WorldGrid.PLANETS.africa = WorldGrid.PLANETS.AFRICA
+WorldGrid.PLANETS.pangaea = WorldGrid.PLANETS.PANGAEA
+WorldGrid.PLANETS.pangea = WorldGrid.PLANETS.PANGAEA
+WorldGrid.PLANETS.mars = WorldGrid.PLANETS.MARS
+WorldGrid.PLANETS.oceania = WorldGrid.PLANETS.OCEANIA
+WorldGrid.PLANETS.mena = WorldGrid.PLANETS.MENA
+WorldGrid.PLANETS.earth = WorldGrid.PLANETS.EARTH
 
 -- ============================================================================
 -- POLÍGONOS DE LA TIERRA (lon, lat, lon, lat, ...)
@@ -1699,8 +1718,13 @@ function WorldGrid.Generate(planetId)
 			end
 		end
 	elseif def.kind == "frontwars" then
-		-- Carga el mapa de pixeles autentico de FrontWars.io desde el modulo modular
+		-- Carga el mapa de pixeles autentico de FrontWars / OpenFront desde el modulo modular
 		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
+		if not fwmModule then
+			local rs = game:GetService("ReplicatedStorage")
+			local sh = rs:FindFirstChild("Shared")
+			fwmModule = sh and sh:FindFirstChild("frontwars_maps")
+		end
 		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
 		if mapModule then
 			local mapData = require(mapModule)

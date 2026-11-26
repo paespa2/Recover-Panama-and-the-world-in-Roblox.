@@ -129,7 +129,13 @@ def main():
             l = client.set_script_source(target, src)
             print(f"Map {m} synced: {l} bytes")
 
-        print("--- 6. Syncing WorldClient ---")
+        print("--- 6. Syncing OpenFrontUI ---")
+        with open("src/client/OpenFrontUI.lua", "r", encoding="utf-8") as f:
+            src = f.read()
+        l = client.set_script_source('game:GetService("StarterPlayer").StarterPlayerScripts.Client.OpenFrontUI', src)
+        print(f"OpenFrontUI synced: {l} bytes")
+
+        print("--- 7. Syncing WorldClient ---")
         with open("src/client/WorldClient.client.lua", "r", encoding="utf-8") as f:
             src = f.read()
         l = client.set_script_source('game:GetService("StarterPlayer").StarterPlayerScripts.Client.WorldClient', src)

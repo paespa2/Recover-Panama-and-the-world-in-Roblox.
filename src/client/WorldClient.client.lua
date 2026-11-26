@@ -202,121 +202,128 @@ cellCursor.ZIndex = 5
 cellCursor.Parent = mapCanvas
 
 -- ============================================================================
--- TOP BAR (Estado, Fase, Marcador, Menú)
+-- TOP CONTROLS & HUD (Estilo OpenFront.io minimalista)
 -- ============================================================================
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 44)
+topBar.Size = UDim2.new(1, 0, 0, 50)
 topBar.Position = UDim2.fromOffset(0, 0)
-topBar.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
-topBar.BackgroundTransparency = 0.15
+topBar.BackgroundTransparency = 1
 topBar.BorderSizePixel = 0
 topBar.ZIndex = 20
 topBar.Parent = root
 
-local topStroke = Instance.new("UIStroke")
-topStroke.Color = Color3.fromRGB(45, 60, 90)
-topStroke.Thickness = 1
-topStroke.Parent = topBar
-
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "TitleLabel"
-titleLabel.Size = UDim2.new(0, 280, 1, 0)
--- Deja libre la esquina superior izquierda: ahí Roblox dibuja su logo, menú y botones por defecto
-titleLabel.Position = UDim2.fromOffset(276, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Font = Enum.Font.GothamBlack
-titleLabel.Text = "⚔️ FRONTWARS | RECUPERAR PANAMÁ"
-titleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-titleLabel.TextSize = 15
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.ZIndex = 21
+titleLabel.Visible = false
 titleLabel.Parent = topBar
 
--- Indicador de fase central
 local phaseBadge = Instance.new("Frame")
 phaseBadge.Name = "PhaseBadge"
-phaseBadge.AnchorPoint = Vector2.new(0.5, 0.5)
-phaseBadge.Position = UDim2.fromScale(0.5, 0.5)
-phaseBadge.Size = UDim2.fromOffset(360, 30)
-phaseBadge.BackgroundColor3 = Color3.fromRGB(25, 35, 55)
-phaseBadge.BorderSizePixel = 0
-phaseBadge.ZIndex = 21
+phaseBadge.Visible = false
 phaseBadge.Parent = topBar
-
-local phaseCorner = Instance.new("UICorner")
-phaseCorner.CornerRadius = UDim.new(0, 4)
-phaseCorner.Parent = phaseBadge
-
-local phaseStroke = Instance.new("UIStroke")
-phaseStroke.Color = Color3.fromRGB(0, 210, 255)
-phaseStroke.Thickness = 1
-phaseStroke.Parent = phaseBadge
 
 local phaseText = Instance.new("TextLabel")
 phaseText.Name = "PhaseText"
-phaseText.Size = UDim2.fromScale(1, 1)
-phaseText.BackgroundTransparency = 1
-phaseText.Font = Enum.Font.GothamBold
-phaseText.Text = "📍 FASE DE SPAWN: Haz clic en el mapa para colocar tu capital"
-phaseText.TextColor3 = Color3.fromRGB(240, 245, 255)
-phaseText.TextSize = 13
-phaseText.ZIndex = 22
 phaseText.Parent = phaseBadge
 
--- Botón Menú / Mapas
-local btnLobby = Instance.new("TextButton")
-btnLobby.Name = "BtnLobby"
-btnLobby.AnchorPoint = Vector2.new(1, 0.5)
-btnLobby.Position = UDim2.new(1, -16, 0.5, 0)
-btnLobby.Size = UDim2.fromOffset(130, 34)
-btnLobby.BackgroundColor3 = Color3.fromRGB(40, 70, 120)
-btnLobby.Font = Enum.Font.GothamBold
-btnLobby.Text = "⚙️ Menú y Modos"
-btnLobby.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnLobby.TextSize = 12
-btnLobby.BorderSizePixel = 0
-btnLobby.ZIndex = 21
-btnLobby.Parent = topBar
+local phaseStroke = Instance.new("UIStroke")
+phaseStroke.Parent = phaseBadge
 
-local btnLobbyCorner = Instance.new("UICorner")
-btnLobbyCorner.CornerRadius = UDim.new(0, 4)
-btnLobbyCorner.Parent = btnLobby
+-- Dock flotante superior derecho (Estilo OpenFront.io: Reloj, Centrar, Táctica, Salir)
+local inGameDock = Instance.new("Frame")
+inGameDock.Name = "OpenFrontInGameDock"
+inGameDock.AnchorPoint = Vector2.new(1, 0)
+inGameDock.Position = UDim2.new(1, -16, 0, 10)
+inGameDock.Size = UDim2.fromOffset(360, 36)
+inGameDock.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
+inGameDock.BackgroundTransparency = 0.08
+inGameDock.BorderSizePixel = 0
+inGameDock.ZIndex = 25
+inGameDock.Parent = topBar
+roundCorners(inGameDock, 8)
+
+local dockStroke = Instance.new("UIStroke")
+dockStroke.Color = Color3.fromRGB(34, 49, 74)
+dockStroke.Thickness = 1.2
+dockStroke.Parent = inGameDock
+
+local clockLabel = Instance.new("TextLabel")
+clockLabel.Name = "ClockLabel"
+clockLabel.Position = UDim2.fromOffset(10, 0)
+clockLabel.Size = UDim2.fromOffset(65, 36)
+clockLabel.BackgroundTransparency = 1
+clockLabel.Font = Enum.Font.GothamBlack
+clockLabel.Text = "00:00"
+clockLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+clockLabel.TextSize = 14
+clockLabel.ZIndex = 26
+clockLabel.Parent = inGameDock
 
 -- Botón Centrar Cámara
 local btnCenter = Instance.new("TextButton")
 btnCenter.Name = "BtnCenter"
-btnCenter.AnchorPoint = Vector2.new(1, 0.5)
-btnCenter.Position = UDim2.new(1, -154, 0.5, 0)
-btnCenter.Size = UDim2.fromOffset(100, 34)
-btnCenter.BackgroundColor3 = Color3.fromRGB(25, 45, 75)
+btnCenter.Position = UDim2.fromOffset(80, 4)
+btnCenter.Size = UDim2.fromOffset(34, 28)
+btnCenter.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
 btnCenter.Font = Enum.Font.GothamBold
-btnCenter.Text = "🎯 Mi Capital"
+btnCenter.Text = "🎯"
 btnCenter.TextColor3 = Color3.fromRGB(255, 220, 0)
-btnCenter.TextSize = 12
+btnCenter.TextSize = 14
 btnCenter.BorderSizePixel = 0
-btnCenter.ZIndex = 21
-btnCenter.Parent = topBar
-
-local btnCenterCorner = Instance.new("UICorner")
-btnCenterCorner.CornerRadius = UDim.new(0, 4)
-btnCenterCorner.Parent = btnCenter
+btnCenter.ZIndex = 26
+btnCenter.Parent = inGameDock
+roundCorners(btnCenter, 6)
 
 -- Botón Configuración Táctica / Atajos
 local btnTactical = Instance.new("TextButton")
 btnTactical.Name = "BtnTactical"
-btnTactical.AnchorPoint = Vector2.new(1, 0.5)
-btnTactical.Position = UDim2.new(1, -506, 0.5, 0)
-btnTactical.Size = UDim2.fromOffset(116, 34)
-btnTactical.BackgroundColor3 = Color3.fromRGB(22, 36, 60)
+btnTactical.Position = UDim2.fromOffset(120, 4)
+btnTactical.Size = UDim2.fromOffset(34, 28)
+btnTactical.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
 btnTactical.Font = Enum.Font.GothamBold
-btnTactical.Text = "⚙️ Táctica (H)"
+btnTactical.Text = "⚙"
 btnTactical.TextColor3 = Color3.fromRGB(245, 175, 45)
-btnTactical.TextSize = 12
+btnTactical.TextSize = 14
 btnTactical.BorderSizePixel = 0
-btnTactical.ZIndex = 21
-btnTactical.Parent = topBar
-roundCorners(btnTactical, 4)
+btnTactical.ZIndex = 26
+btnTactical.Parent = inGameDock
+roundCorners(btnTactical, 6)
+
+-- Botón Menú / Hub OpenFront
+local btnLobby = Instance.new("TextButton")
+btnLobby.Name = "BtnLobby"
+btnLobby.Position = UDim2.fromOffset(160, 4)
+btnLobby.Size = UDim2.fromOffset(95, 28)
+btnLobby.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+btnLobby.Font = Enum.Font.GothamBlack
+btnLobby.Text = "↪ MENÚ"
+btnLobby.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnLobby.TextSize = 11
+btnLobby.BorderSizePixel = 0
+btnLobby.ZIndex = 26
+btnLobby.Parent = inGameDock
+roundCorners(btnLobby, 6)
+
+-- Botón Clasificación flotante superior izquierdo
+local btnLeaderToggle = Instance.new("TextButton")
+btnLeaderToggle.Name = "BtnLeaderToggle"
+btnLeaderToggle.Position = UDim2.fromOffset(16, 10)
+btnLeaderToggle.Size = UDim2.fromOffset(126, 36)
+btnLeaderToggle.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
+btnLeaderToggle.BackgroundTransparency = 0.08
+btnLeaderToggle.Font = Enum.Font.GothamBold
+btnLeaderToggle.Text = "📊 Clasificación"
+btnLeaderToggle.TextColor3 = Color3.fromRGB(240, 245, 255)
+btnLeaderToggle.TextSize = 12
+btnLeaderToggle.BorderSizePixel = 0
+btnLeaderToggle.ZIndex = 25
+btnLeaderToggle.Parent = topBar
+roundCorners(btnLeaderToggle, 8)
+local ltgStroke = Instance.new("UIStroke")
+ltgStroke.Color = Color3.fromRGB(34, 49, 74)
+ltgStroke.Thickness = 1.2
+ltgStroke.Parent = btnLeaderToggle
 
 -- Modal emergente de Configuración Táctica / Atajos rápidos (Tecla H o botón en barra superior)
 local tacticalModal = Instance.new("Frame")
@@ -433,22 +440,23 @@ end)
 local leaderFrame = Instance.new("Frame")
 leaderFrame.Name = "Leaderboard"
 leaderFrame.AnchorPoint = Vector2.new(1, 0)
-leaderFrame.Position = UDim2.new(1, -16, 0, 62)
+leaderFrame.Position = UDim2.new(1, -16, 0, 52)
 leaderFrame.Size = UDim2.fromOffset(230, 250)
-leaderFrame.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
-leaderFrame.BackgroundTransparency = 0.04 -- casi opaco: los rótulos del mapa no deben transparentarse
+leaderFrame.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
+leaderFrame.BackgroundTransparency = 0.08
 leaderFrame.BorderSizePixel = 0
 leaderFrame.ZIndex = 20
 leaderFrame.Parent = root
-
-local leaderCorner = Instance.new("UICorner")
-leaderCorner.CornerRadius = UDim.new(0, 8)
-leaderCorner.Parent = leaderFrame
+roundCorners(leaderFrame, 8)
 
 local leaderStroke = Instance.new("UIStroke")
-leaderStroke.Color = Color3.fromRGB(45, 60, 90)
-leaderStroke.Thickness = 1
+leaderStroke.Color = Color3.fromRGB(34, 49, 74)
+leaderStroke.Thickness = 1.2
 leaderStroke.Parent = leaderFrame
+
+btnLeaderToggle.MouseButton1Click:Connect(function()
+	leaderFrame.Visible = not leaderFrame.Visible
+end)
 
 local leaderScale = Instance.new("UIScale")
 leaderScale.Parent = leaderFrame
@@ -485,19 +493,16 @@ bottomHUD.AnchorPoint = Vector2.new(0.5, 1)
 bottomHUD.Position = UDim2.new(0.5, 0, 1, -12)
 -- 7 botones de 132 px + separación (140 px de paso) + márgenes: 10 + 6*140 + 132 + 10 = 992 px
 bottomHUD.Size = UDim2.fromOffset(980, 92)
-bottomHUD.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
-bottomHUD.BackgroundTransparency = 0.12
+bottomHUD.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
+bottomHUD.BackgroundTransparency = 0.08
 bottomHUD.BorderSizePixel = 0
 bottomHUD.ZIndex = 20
 bottomHUD.Parent = root
-
-local bottomCorner = Instance.new("UICorner")
-bottomCorner.CornerRadius = UDim.new(0, 6)
-bottomCorner.Parent = bottomHUD
+roundCorners(bottomHUD, 10)
 
 local bottomStroke = Instance.new("UIStroke")
-bottomStroke.Color = Color3.fromRGB(50, 70, 110)
-bottomStroke.Thickness = 1
+bottomStroke.Color = Color3.fromRGB(34, 49, 74)
+bottomStroke.Thickness = 1.2
 bottomStroke.Parent = bottomHUD
 
 -- Los paneles de tamaño fijo se reescalan según la pantalla (ver fitUI) para no deformarse ni salirse
@@ -515,26 +520,28 @@ statsRow.Parent = bottomHUD
 
 local troopsCard = Instance.new("TextLabel")
 troopsCard.Name = "TroopsCard"
-troopsCard.Size = UDim2.fromOffset(215, 30) -- estilo FrontWars: píldora roja destacada
+troopsCard.Size = UDim2.fromOffset(215, 30)
 troopsCard.Position = UDim2.fromOffset(0, 2)
-troopsCard.BackgroundColor3 = Color3.fromRGB(210, 60, 60)
+troopsCard.BackgroundColor3 = Color3.fromRGB(20, 32, 52)
 troopsCard.BorderSizePixel = 0
 troopsCard.Font = Enum.Font.GothamBlack
-troopsCard.Text = "⚔️ 1.5K / 10.0K (+25)"
-troopsCard.TextColor3 = Color3.fromRGB(255, 255, 255)
+troopsCard.Text = "⚔️ 10.0K / 100K (+218)"
+troopsCard.TextColor3 = Color3.fromRGB(0, 229, 255)
 troopsCard.TextSize = 12
 troopsCard.ZIndex = 22
 troopsCard.Parent = statsRow
+roundCorners(troopsCard, 6)
 
-local troopsCorner = Instance.new("UICorner")
-troopsCorner.CornerRadius = UDim.new(0, 8)
-troopsCorner.Parent = troopsCard
+local troopsStroke = Instance.new("UIStroke")
+troopsStroke.Color = Color3.fromRGB(0, 229, 255)
+troopsStroke.Thickness = 1
+troopsStroke.Parent = troopsCard
 
 local goldCard = Instance.new("TextLabel")
 goldCard.Name = "GoldCard"
 goldCard.Size = UDim2.fromOffset(150, 30)
 goldCard.Position = UDim2.fromOffset(223, 2)
-goldCard.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
+goldCard.BackgroundColor3 = Color3.fromRGB(20, 32, 52)
 goldCard.BorderSizePixel = 0
 goldCard.Font = Enum.Font.GothamBlack
 goldCard.Text = "💰 Oro: 700 (+15/s)"
@@ -542,10 +549,12 @@ goldCard.TextColor3 = Color3.fromRGB(255, 215, 0)
 goldCard.TextSize = 12
 goldCard.ZIndex = 22
 goldCard.Parent = statsRow
+roundCorners(goldCard, 6)
 
-local goldCorner = Instance.new("UICorner")
-goldCorner.CornerRadius = UDim.new(0, 4)
-goldCorner.Parent = goldCard
+local goldStroke = Instance.new("UIStroke")
+goldStroke.Color = Color3.fromRGB(45, 60, 90)
+goldStroke.Thickness = 1
+goldStroke.Parent = goldCard
 
 -- Selector de Ratio de Ataque [20% | 40% | 60% | 80% | 100%]
 local ratioLabel = Instance.new("TextLabel")
@@ -912,6 +921,7 @@ weaponBar.Name = "WeaponBar"
 weaponBar.Position = UDim2.fromOffset(188, -52) -- justo encima del HUD (se escala con él)
 weaponBar.Size = UDim2.fromOffset(624, 46)
 weaponBar.BackgroundTransparency = 1
+weaponBar.Visible = false
 weaponBar.ZIndex = 22
 weaponBar.Parent = bottomHUD
 
@@ -1411,582 +1421,45 @@ local COLOR_CARD_SEL = Color3.fromRGB(24, 70, 96)
 local COLOR_CHIP = Color3.fromRGB(30, 42, 64)
 local COLOR_ACCENT = Color3.fromRGB(0, 200, 255)
 
-local lobbyScreen = Instance.new("Frame")
-lobbyScreen.Name = "LobbyScreen"
-lobbyScreen.Size = UDim2.fromScale(1, 1)
-lobbyScreen.BackgroundColor3 = Color3.fromRGB(6, 10, 18)
-lobbyScreen.BackgroundTransparency = 0.1
-lobbyScreen.BorderSizePixel = 0
-lobbyScreen.Active = true -- bloquea los clics hacia el mapa
-lobbyScreen.ZIndex = 60
-lobbyScreen.Parent = root
+local OpenFrontUIModule = script.Parent:WaitForChild("OpenFrontUI")
+local OpenFrontUI = require(OpenFrontUIModule)
 
-local showLobby, updateLobbyStatus
-do
-local lobbyCard = Instance.new("Frame")
-lobbyCard.Name = "LobbyCard"
-lobbyCard.AnchorPoint = Vector2.new(0.5, 0.5)
-lobbyCard.Position = UDim2.fromScale(0.5, 0.5)
-lobbyCard.Size = UDim2.fromOffset(920, 600)
-lobbyCard.BackgroundColor3 = Color3.fromRGB(14, 20, 34)
-lobbyCard.BorderSizePixel = 0
-lobbyCard.ZIndex = 61
-lobbyCard.Parent = lobbyScreen
-
-local lobbyCardCorner = Instance.new("UICorner")
-lobbyCardCorner.CornerRadius = UDim.new(0, 16)
-lobbyCardCorner.Parent = lobbyCard
-
-local lobbyCardStroke = Instance.new("UIStroke")
-lobbyCardStroke.Color = COLOR_ACCENT
-lobbyCardStroke.Thickness = 2
-lobbyCardStroke.Parent = lobbyCard
-
--- Escala la tarjeta para que quepa en pantallas pequeñas (móviles, ventanas reducidas)
-local lobbyScale = Instance.new("UIScale")
-lobbyScale.Parent = lobbyCard
-local function fitLobby()
-	local vs = root.AbsoluteSize
-	if vs.X > 0 and vs.Y > 0 then
-		lobbyScale.Scale = math.clamp(math.min(vs.X / 960, vs.Y / 640), 0.45, 1.25)
-	end
-end
-root:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitLobby)
-fitLobby()
-
-local function lobbyLabel(text, pos, size, font, color, textSize, align)
-	local l = Instance.new("TextLabel")
-	l.BackgroundTransparency = 1
-	l.Text = text
-	l.Position = pos
-	l.Size = size
-	l.Font = font
-	l.TextColor3 = color
-	l.TextSize = textSize
-	l.TextXAlignment = align or Enum.TextXAlignment.Left
-	l.TextWrapped = true
-	l.ZIndex = 62
-	l.Parent = lobbyCard
-	return l
-end
-
-lobbyLabel(
-	"🌍 RECUPERAR PANAMÁ Y EL MUNDO",
-	UDim2.fromOffset(28, 18),
-	UDim2.fromOffset(700, 38),
-	Enum.Font.GothamBlack,
-	Color3.fromRGB(255, 215, 0),
-	26
-)
-lobbyLabel(
-	"Conquista el mundo país por país. Hasta 20 jugadores por servidor.",
-	UDim2.fromOffset(28, 56),
-	UDim2.fromOffset(700, 20),
-	Enum.Font.Gotham,
-	Color3.fromRGB(150, 170, 200),
-	13
-)
-
-local btnLobbyClose = Instance.new("TextButton")
-btnLobbyClose.AnchorPoint = Vector2.new(1, 0)
-btnLobbyClose.Position = UDim2.new(1, -20, 0, 20)
-btnLobbyClose.Size = UDim2.fromOffset(34, 34)
-btnLobbyClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-btnLobbyClose.BorderSizePixel = 0
-btnLobbyClose.Font = Enum.Font.GothamBlack
-btnLobbyClose.Text = "✕"
-btnLobbyClose.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnLobbyClose.TextSize = 15
-btnLobbyClose.Visible = false
-btnLobbyClose.ZIndex = 63
-btnLobbyClose.Parent = lobbyCard
-roundCorners(btnLobbyClose, 8)
-
--- ---- Columna izquierda: modos de juego ----
-lobbyLabel("MODO DE JUEGO", UDim2.fromOffset(28, 96), UDim2.fromOffset(440, 18), Enum.Font.GothamBold, COLOR_ACCENT, 12)
-
-local MODES = {
-	{
-		id = "FREE",
-		icon = "🌐",
-		name = "FRONTWARS FFA",
-		desc = "Inicio 100% igualitario (1.5K tropas, 10K capacidad). Elige tu capital y conquista el mundo neutral.",
-		tag = "OFICIAL",
-	},
-	{
-		id = "TEAMS_2",
-		icon = "⚔️",
-		name = "2 EQUIPOS: ROJO vs AZUL",
-		desc = "Guerra bipolar: La mitad del mundo es Roja y la otra Azul. Aliados no se atacan y ganan juntos.",
-		tag = "EQUIPOS",
-	},
-	{
-		id = "CONTINENTS",
-		icon = "🧭",
-		name = "CONTINENTES UNIDOS",
-		desc = "Cada continente forma una alianza unida contra los otros continentes.",
-		tag = "ALIANZAS",
-	},
-	{
-		id = "BLITZ",
-		icon = "⚡",
-		name = "MODO RÁPIDO (BLITZ)",
-		desc = "Economía x2.5, producción de tropas acelerada. Partidas ultra rápidas y dinámicas.",
-		tag = "RÁPIDO",
-	},
-	{
-		id = "ZOMBIES",
-		icon = "🧟",
-		name = "INFECCIÓN ZOMBI",
-		desc = "Una horda zombi infectada devora el mapa. ¡Si tu nación cae, te unes a los infectados!",
-		tag = "SUPERVIVENCIA",
-	},
-	{
-		id = "BATTLE_ROYALE",
-		icon = "🌪️",
-		name = "BATTLE ROYALE",
-		desc = "Una zona de tormenta encoge los límites del mapa hacia el centro. ¡El último en pie gana!",
-		tag = "TORMENTA",
-	},
-	{
-		id = "COUNTRIES",
-		icon = "🏳️",
-		name = "HISTÓRICO ASIMÉTRICO",
-		desc = "Fronteras y naciones reales de la Tierra. Desafío asimétrico no competitivo.",
-		tag = "DESAFÍO",
-	},
-}
-
-local modesScroll = Instance.new("ScrollingFrame")
-modesScroll.Name = "ModesScroll"
-modesScroll.Position = UDim2.fromOffset(28, 120)
-modesScroll.Size = UDim2.fromOffset(444, 345)
-modesScroll.BackgroundTransparency = 1
-modesScroll.BorderSizePixel = 0
-modesScroll.ScrollBarThickness = 5
-modesScroll.ScrollBarImageColor3 = COLOR_ACCENT
-modesScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-modesScroll.CanvasSize = UDim2.new()
-modesScroll.ZIndex = 62
-modesScroll.Parent = lobbyCard
-
-local modesLayout = Instance.new("UIListLayout")
-modesLayout.SortOrder = Enum.SortOrder.LayoutOrder
-modesLayout.Padding = UDim.new(0, 8)
-modesLayout.Parent = modesScroll
-
-local modeCards = {}
-for i, m in ipairs(MODES) do
-	local card = Instance.new("TextButton")
-	card.Name = "Mode_" .. m.id
-	card.LayoutOrder = i
-	card.Size = UDim2.new(1, -10, 0, 86)
-	card.BackgroundColor3 = COLOR_CARD
-	card.BorderSizePixel = 0
-	card.AutoButtonColor = not m.disabled
-	card.Text = ""
-	card.ZIndex = 63
-	card.Parent = modesScroll
-	roundCorners(card, 10)
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 2
-	stroke.Color = Color3.fromRGB(50, 66, 96)
-	stroke.Parent = card
-
-	local icon = Instance.new("TextLabel")
-	icon.BackgroundTransparency = 1
-	icon.Position = UDim2.fromOffset(10, 0)
-	icon.Size = UDim2.fromOffset(48, 86)
-	icon.Font = Enum.Font.GothamBold
-	icon.Text = m.icon
-	icon.TextSize = 30
-	icon.TextColor3 = Color3.fromRGB(255, 255, 255)
-	icon.ZIndex = 64
-	icon.Parent = card
-
-	local name = Instance.new("TextLabel")
-	name.BackgroundTransparency = 1
-	name.Position = UDim2.fromOffset(64, 10)
-	name.Size = UDim2.new(1, -78, 0, 20)
-	name.Font = Enum.Font.GothamBlack
-	name.Text = m.name
-	name.TextSize = 14
-	name.TextXAlignment = Enum.TextXAlignment.Left
-	name.TextColor3 = if m.disabled then Color3.fromRGB(120, 130, 150) else Color3.fromRGB(240, 246, 255)
-	name.ZIndex = 64
-	name.Parent = card
-
-	local desc = Instance.new("TextLabel")
-	desc.BackgroundTransparency = 1
-	desc.Position = UDim2.fromOffset(64, 32)
-	desc.Size = UDim2.new(1, -80, 0, 46)
-	desc.Font = Enum.Font.Gotham
-	desc.Text = m.desc
-	desc.TextSize = 11
-	desc.TextWrapped = true
-	desc.TextXAlignment = Enum.TextXAlignment.Left
-	desc.TextYAlignment = Enum.TextYAlignment.Top
-	desc.TextColor3 = Color3.fromRGB(150, 168, 196)
-	desc.ZIndex = 64
-	desc.Parent = card
-
-	if m.tag then
-		local tag = Instance.new("TextLabel")
-		tag.AnchorPoint = Vector2.new(1, 0)
-		tag.Position = UDim2.new(1, -8, 0, 8)
-		tag.Size = UDim2.fromOffset(98, 18)
-		tag.BackgroundColor3 = Color3.fromRGB(0, 150, 110)
-		tag.Font = Enum.Font.GothamBlack
-		tag.Text = m.tag
-		tag.TextSize = 9
-		tag.TextColor3 = Color3.fromRGB(255, 255, 255)
-		tag.ZIndex = 65
-		tag.Parent = card
-		roundCorners(tag, 9)
-	end
-
-	modeCards[m.id] = { card = card, stroke = stroke, disabled = m.disabled }
-end
-
--- ---- Columna derecha: mapa, dificultad, bots ----
-local rightX = 496
-lobbyLabel("MAPA", UDim2.fromOffset(rightX, 96), UDim2.fromOffset(396, 18), Enum.Font.GothamBold, COLOR_ACCENT, 12)
-
-local planetNote = lobbyLabel(
-	"",
-	UDim2.fromOffset(rightX, 118),
-	UDim2.fromOffset(396, 30),
-	Enum.Font.Gotham,
-	Color3.fromRGB(150, 168, 196),
-	11
-)
-planetNote.TextYAlignment = Enum.TextYAlignment.Top
-
-local PLANETS = {
-	{ id = "EARTH", name = "🌍 Tierra" },
-	{ id = "WORLD", name = "🌐 World (FW)" },
-	{ id = "EUROPE", name = "🏰 Europa (FW)" },
-	{ id = "ASIA", name = "🏯 Asia (FW)" },
-	{ id = "AFRICA", name = "🦁 África (FW)" },
-	{ id = "MENA", name = "🏜️ Medio Oriente" },
-	{ id = "OCEANIA", name = "🏝️ Oceanía" },
-	{ id = "PANGEA", name = "🦕 Pangea" },
-	{ id = "MARS", name = "🔴 Marte" },
-}
-local planetChips = {}
-for i, p in ipairs(PLANETS) do
-	local col = (i - 1) % 3
-	local row = (i - 1) // 3
-	local chip = Instance.new("TextButton")
-	chip.Position = UDim2.fromOffset(rightX + col * 134, 142 + row * 34)
-	chip.Size = UDim2.fromOffset(128, 30)
-	chip.BackgroundColor3 = COLOR_CHIP
-	chip.BorderSizePixel = 0
-	chip.Font = Enum.Font.GothamBold
-	chip.Text = p.name
-	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
-	chip.TextSize = 11
-	chip.ZIndex = 62
-	chip.Parent = lobbyCard
-	roundCorners(chip, 8)
-	planetChips[p.id] = chip
-end
-
-lobbyLabel(
-	"DIFICULTAD DE LOS BOTS",
-	UDim2.fromOffset(rightX, 246),
-	UDim2.fromOffset(396, 18),
-	Enum.Font.GothamBold,
-	COLOR_ACCENT,
-	12
-)
-local DIFFS = {
-	{ id = "EASY", name = "🟢 Fácil" },
-	{ id = "NORMAL", name = "🟡 Normal" },
-	{ id = "HARD", name = "🟠 Difícil" },
-	{ id = "EXTREME", name = "🔴 Extrema" },
-}
-local diffChips = {}
-for i, d in ipairs(DIFFS) do
-	local chip = Instance.new("TextButton")
-	chip.Position = UDim2.fromOffset(rightX + (i - 1) * 100, 270)
-	chip.Size = UDim2.fromOffset(94, 34)
-	chip.BackgroundColor3 = COLOR_CHIP
-	chip.BorderSizePixel = 0
-	chip.Font = Enum.Font.GothamBold
-	chip.Text = d.name
-	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
-	chip.TextSize = 12
-	chip.ZIndex = 62
-	chip.Parent = lobbyCard
-	roundCorners(chip, 8)
-	diffChips[d.id] = chip
-end
-
-local botsLabel = lobbyLabel(
-	"NÚMERO DE BOTS (modo Libre)",
-	UDim2.fromOffset(rightX, 316),
-	UDim2.fromOffset(396, 18),
-	Enum.Font.GothamBold,
-	COLOR_ACCENT,
-	12
-)
-local BOT_COUNTS = { 20, 40, 60, 90 }
-local botChips = {}
-for i, n in ipairs(BOT_COUNTS) do
-	local chip = Instance.new("TextButton")
-	chip.Position = UDim2.fromOffset(rightX + (i - 1) * 100, 340)
-	chip.Size = UDim2.fromOffset(94, 34)
-	chip.BackgroundColor3 = COLOR_CHIP
-	chip.BorderSizePixel = 0
-	chip.Font = Enum.Font.GothamBold
-	chip.Text = "🤖 " .. n
-	chip.TextColor3 = Color3.fromRGB(255, 255, 255)
-	chip.TextSize = 12
-	chip.ZIndex = 62
-	chip.Parent = lobbyCard
-	roundCorners(chip, 8)
-	botChips[n] = chip
-end
-
--- Tarjeta de Configuración Táctica idéntica a la especificación de referencia
-local tacticalCard = Instance.new("Frame")
-tacticalCard.Name = "TacticalCard"
-tacticalCard.Position = UDim2.fromOffset(rightX, 382)
-tacticalCard.Size = UDim2.fromOffset(396, 92)
-tacticalCard.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
-tacticalCard.BorderSizePixel = 0
-tacticalCard.ZIndex = 62
-tacticalCard.Parent = lobbyCard
-roundCorners(tacticalCard, 8)
-
-local tacticalCardStroke = Instance.new("UIStroke")
-tacticalCardStroke.Color = Color3.fromRGB(40, 58, 84)
-tacticalCardStroke.Thickness = 1
-tacticalCardStroke.Parent = tacticalCard
-
-local tacTitle = Instance.new("TextLabel")
-tacTitle.BackgroundTransparency = 1
-tacTitle.Position = UDim2.fromOffset(10, 6)
-tacTitle.Size = UDim2.new(1, -20, 0, 16)
-tacTitle.Font = Enum.Font.GothamBlack
-tacTitle.Text = "CONFIGURACIÓN TÁCTICA"
-tacTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-tacTitle.TextSize = 13
-tacTitle.TextXAlignment = Enum.TextXAlignment.Left
-tacTitle.ZIndex = 63
-tacTitle.Parent = tacticalCard
-
-local tacSub = Instance.new("TextLabel")
-tacSub.BackgroundTransparency = 1
-tacSub.Position = UDim2.fromOffset(10, 22)
-tacSub.Size = UDim2.new(1, -20, 0, 12)
-tacSub.Font = Enum.Font.GothamBold
-tacSub.Text = "PREFERENCIAS DE INTERFAZ Y RENDIMIENTO"
-tacSub.TextColor3 = Color3.fromRGB(245, 175, 45)
-tacSub.TextSize = 9
-tacSub.TextXAlignment = Enum.TextXAlignment.Left
-tacSub.ZIndex = 63
-tacSub.Parent = tacticalCard
-
-local tacBullets = Instance.new("TextLabel")
-tacBullets.BackgroundTransparency = 1
-tacBullets.Position = UDim2.fromOffset(10, 36)
-tacBullets.Size = UDim2.new(1, -20, 0, 42)
-tacBullets.Font = Enum.Font.Gotham
-tacBullets.Text = "• Atajos rápidos: H (How to Play), M (Silenciar música), Esc (Cerrar menús)\n• Escalado Responsivo UIScale: ACTIVO (Automático 1080p / 720p / Móvil)\n• Renderizado de Fronteras Iluminadas (2 pasadas): ACTIVO\n• Actualización de Bloques Sucios (Dirty Rectangles): ACTIVO"
-tacBullets.TextColor3 = Color3.fromRGB(215, 226, 242)
-tacBullets.TextSize = 9
-tacBullets.TextXAlignment = Enum.TextXAlignment.Left
-tacBullets.TextWrapped = true
-tacBullets.ZIndex = 63
-tacBullets.Parent = tacticalCard
-
-local tacWelcome = Instance.new("TextLabel")
-tacWelcome.BackgroundTransparency = 1
-tacWelcome.Position = UDim2.fromOffset(10, 78)
-tacWelcome.Size = UDim2.new(1, -20, 0, 12)
-tacWelcome.Font = Enum.Font.GothamBold
-tacWelcome.Text = "Bienvenido, Comandante " .. commanderName
-tacWelcome.TextColor3 = Color3.fromRGB(90, 115, 145)
-tacWelcome.TextSize = 9
-tacWelcome.TextXAlignment = Enum.TextXAlignment.Left
-tacWelcome.ZIndex = 63
-tacWelcome.Parent = tacticalCard
-
--- ---- Barra inferior: estado del servidor y botón JUGAR ----
-local lobbyDivider = Instance.new("Frame")
-lobbyDivider.Position = UDim2.fromOffset(28, 478)
-lobbyDivider.Size = UDim2.fromOffset(864, 1)
-lobbyDivider.BackgroundColor3 = Color3.fromRGB(40, 54, 80)
-lobbyDivider.BorderSizePixel = 0
-lobbyDivider.ZIndex = 62
-lobbyDivider.Parent = lobbyCard
-
-local lobbyStatus = lobbyLabel(
-	"Conectando con el servidor...",
-	UDim2.fromOffset(28, 492),
-	UDim2.fromOffset(540, 22),
-	Enum.Font.GothamBold,
-	Color3.fromRGB(220, 232, 250),
-	13
-)
-local lobbyHint = lobbyLabel(
-	"",
-	UDim2.fromOffset(28, 516),
-	UDim2.fromOffset(540, 44),
-	Enum.Font.Gotham,
-	Color3.fromRGB(255, 190, 90),
-	12
-)
-lobbyHint.TextYAlignment = Enum.TextYAlignment.Top
-
-local btnPlay = Instance.new("TextButton")
-btnPlay.AnchorPoint = Vector2.new(1, 0)
-btnPlay.Position = UDim2.new(1, -28, 0, 494)
-btnPlay.Size = UDim2.fromOffset(290, 62)
-btnPlay.BackgroundColor3 = Color3.fromRGB(0, 190, 120)
-btnPlay.BorderSizePixel = 0
-btnPlay.Font = Enum.Font.GothamBlack
-btnPlay.Text = "▶  JUGAR"
-btnPlay.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnPlay.TextSize = 22
-btnPlay.ZIndex = 63
-btnPlay.Parent = lobbyCard
-roundCorners(btnPlay, 12)
-
--- ---- Lógica de selección ----
-local function refreshLobby()
-	if selMode ~= "FREE" then
-		selPlanet = "EARTH"
-	end
-	for id, c in pairs(modeCards) do
-		local selected = id == selMode
-		c.card.BackgroundColor3 = if selected then COLOR_CARD_SEL else COLOR_CARD
-		c.stroke.Color = if selected then COLOR_ACCENT else Color3.fromRGB(50, 66, 96)
-		c.card.BackgroundTransparency = if c.disabled then 0.5 else 0
-	end
-	local freeMode = selMode == "FREE"
-	planetNote.Text = if freeMode
-		then "Elige el mundo donde jugar."
-		else "Mapa: la Tierra real, con sus 164 países y sus fronteras."
-	for id, chip in pairs(planetChips) do
-		local selected = id == selPlanet
-		chip.BackgroundColor3 = if selected then Color3.fromRGB(0, 140, 210) else COLOR_CHIP
-		chip.BackgroundTransparency = if freeMode or id == "EARTH" then 0 else 0.6
-		chip.TextTransparency = if freeMode or id == "EARTH" then 0 else 0.5
-	end
-	for id, chip in pairs(diffChips) do
-		chip.BackgroundColor3 = if id == selDiff then Color3.fromRGB(0, 170, 115) else COLOR_CHIP
-	end
-	botsLabel.TextTransparency = if freeMode then 0 else 0.6
-	for n, chip in pairs(botChips) do
-		chip.BackgroundColor3 = if n == selBots and freeMode then Color3.fromRGB(150, 90, 220) else COLOR_CHIP
-		chip.BackgroundTransparency = if freeMode then 0 else 0.6
-		chip.TextTransparency = if freeMode then 0 else 0.5
-	end
-end
-
-for _, m in ipairs(MODES) do
-	if not m.disabled then
-		modeCards[m.id].card.MouseButton1Click:Connect(function()
-			selMode = m.id
-			refreshLobby()
-		end)
-	else
-		modeCards[m.id].card.MouseButton1Click:Connect(function()
-			showToast("🧭 El modo Continentes llegará pronto", Color3.fromRGB(255, 200, 80))
-		end)
-	end
-end
-for _, p in ipairs(PLANETS) do
-	planetChips[p.id].MouseButton1Click:Connect(function()
-		if selMode == "FREE" then
-			selPlanet = p.id
-			refreshLobby()
-		else
-			showToast("Para elegir otros mundos usa el modo Libre", Color3.fromRGB(255, 200, 80))
+local openfrontApi = OpenFrontUI.create(root, {
+	onLaunchGame = function(planet, bots, diff, mode)
+		WorldCommand:FireServer({
+			a = "PLAY",
+			planet = planet,
+			bots = bots,
+			difficulty = diff,
+			mode = mode,
+		})
+		showToast("⚔️ Iniciando partida OpenFront.io...", Color3.fromRGB(0, 229, 255))
+	end,
+	onSettings = function()
+		if tacticalModal then
+			tacticalModal.Visible = not tacticalModal.Visible
 		end
-	end)
-end
-for _, d in ipairs(DIFFS) do
-	diffChips[d.id].MouseButton1Click:Connect(function()
-		selDiff = d.id
-		refreshLobby()
-	end)
-end
-for _, n in ipairs(BOT_COUNTS) do
-	botChips[n].MouseButton1Click:Connect(function()
-		if selMode == "FREE" then
-			selBots = n
-			refreshLobby()
-		end
-	end)
+	end,
+	onHelp = function()
+		showToast("OpenFront.io: Conquista celdas, construye ciudades y defiende con puestos", Color3.fromRGB(255, 215, 0))
+	end,
+	onNotify = function(msg)
+		showToast(msg, Color3.fromRGB(0, 200, 255))
+	end,
+})
+
+local lobbyScreen = root:WaitForChild("OpenFrontHubScreen", 5) or { Visible = false }
+
+local function showLobby(visible)
+	openfrontApi.show(visible)
 end
 
-local MODE_NAMES = {
-	FREE = "FrontWars FFA (Competitivo)",
-	TEAMS_2 = "2 Equipos (Rojo vs Azul)",
-	CONTINENTS = "Continentes Unidos",
-	BLITZ = "Modo Rápido (Blitz)",
-	ZOMBIES = "Infección Zombi",
-	BATTLE_ROYALE = "Battle Royale",
-	COUNTRIES = "Histórico Asimétrico",
-}
-local PHASE_NAMES = { SPAWN = "fase de aparición", BATTLE = "en guerra", RUNNING = "en guerra", ENDED = "terminada" }
-
-function updateLobbyStatus()
-	local s = state.stats
-	if not s then
-		lobbyStatus.Text = "Conectando con el servidor..."
-		lobbyHint.Text = ""
-		return
-	end
-	local players = s.players or 1
-	lobbyStatus.Text = string.format(
-		"👥 %d/%d jugadores   ·   Partida: %s (%s)",
-		players,
-		s.maxPlayers or 20,
-		MODE_NAMES[if s.teamMode then "CONTINENTS" else (s.mode or "FREE")] or "Libre",
-		PHASE_NAMES[s.phase or ""] or "..."
-	)
-	local isHost = s.hostId == player.UserId
-	if players > 1 and not isHost and s.phase ~= "ENDED" then
-		lobbyHint.Text = "Solo el anfitrión puede cambiar el modo: entrarás a la partida en curso."
-		btnPlay.Text = "▶  ENTRAR"
-	else
-		lobbyHint.Text = ""
-		btnPlay.Text = "▶  JUGAR"
-	end
+local function updateLobbyStatus()
+	-- No-op
 end
 
-function showLobby(visible)
-	lobbyScreen.Visible = visible
-	btnLobbyClose.Visible = visible and state.initialized
-	if visible then
-		refreshLobby()
-		updateLobbyStatus()
-	end
-end
-
-btnPlay.MouseButton1Click:Connect(function()
-	showLobby(false)
-	WorldCommand:FireServer({
-		a = "PLAY",
-		planet = selPlanet,
-		bots = selBots,
-		difficulty = selDiff,
-		mode = selMode,
-	})
-	showToast("Cargando partida...", Color3.fromRGB(255, 215, 0))
-end)
-btnLobbyClose.MouseButton1Click:Connect(function()
-	showLobby(false)
-end)
-end
 btnLobby.MouseButton1Click:Connect(function()
-	showLobby(not lobbyScreen.Visible)
+	openfrontApi.toggle()
 end)
 
 showLobby(true)
@@ -3932,85 +3405,62 @@ end)
 local spawnBanner = Instance.new("Frame")
 spawnBanner.Name = "SpawnBanner"
 spawnBanner.AnchorPoint = Vector2.new(0.5, 0)
-spawnBanner.Position = UDim2.new(0.5, 0, 0, 64)
-spawnBanner.Size = UDim2.fromOffset(580, 82)
-spawnBanner.BackgroundColor3 = Color3.fromRGB(12, 20, 36)
-spawnBanner.BackgroundTransparency = 0.04
+spawnBanner.Position = UDim2.new(0.5, 0, 0, 10)
+spawnBanner.Size = UDim2.fromOffset(440, 44)
+spawnBanner.BackgroundColor3 = Color3.fromRGB(15, 22, 35)
+spawnBanner.BackgroundTransparency = 0.06
 spawnBanner.BorderSizePixel = 0
 spawnBanner.Visible = false
 spawnBanner.ZIndex = 40
 spawnBanner.Parent = root
+roundCorners(spawnBanner, 22)
+
+local spawnBannerStroke = Instance.new("UIStroke")
+spawnBannerStroke.Color = Color3.fromRGB(0, 229, 255)
+spawnBannerStroke.Thickness = 1.5
+spawnBannerStroke.Parent = spawnBanner
+
 spawnScale = Instance.new("UIScale")
 spawnScale.Parent = spawnBanner
 
-local spawnBannerCorner = Instance.new("UICorner")
-spawnBannerCorner.CornerRadius = UDim.new(0, 12)
-spawnBannerCorner.Parent = spawnBanner
+local bannerTitle = Instance.new("TextLabel")
+bannerTitle.Position = UDim2.fromOffset(20, 0)
+bannerTitle.Size = UDim2.new(1, -150, 1, 0)
+bannerTitle.BackgroundTransparency = 1
+bannerTitle.Font = Enum.Font.GothamBlack
+bannerTitle.Text = "📍 Elige el lugar de inicio"
+bannerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+bannerTitle.TextSize = 13
+bannerTitle.TextXAlignment = Enum.TextXAlignment.Left
+bannerTitle.ZIndex = 41
+bannerTitle.Parent = spawnBanner
 
-local spawnBannerStroke = Instance.new("UIStroke")
-spawnBannerStroke.Color = Color3.fromRGB(0, 220, 255)
-spawnBannerStroke.Thickness = 2
-spawnBannerStroke.Parent = spawnBanner
-
-local function bannerLabel(pos, size, font, textSize, color, align)
-	local l = Instance.new("TextLabel")
-	l.BackgroundTransparency = 1
-	l.Position = pos
-	l.Size = size
-	l.Font = font
-	l.TextSize = textSize
-	l.TextColor3 = color
-	l.TextXAlignment = align or Enum.TextXAlignment.Center
-	l.TextWrapped = true
-	l.ZIndex = 41
-	l.Parent = spawnBanner
-	return l
-end
-local bannerTitle = bannerLabel(
-	UDim2.fromOffset(16, 8),
-	UDim2.new(1, -110, 0, 26),
-	Enum.Font.GothamBlack,
-	18,
-	Color3.fromRGB(240, 248, 255),
-	Enum.TextXAlignment.Left
-)
-local bannerTime = bannerLabel(
-	UDim2.new(1, -96, 0, 8),
-	UDim2.fromOffset(80, 26),
-	Enum.Font.GothamBlack,
-	18,
-	Color3.fromRGB(0, 220, 255),
-	Enum.TextXAlignment.Right
-)
-local bannerSub = bannerLabel(
-	UDim2.fromOffset(16, 34),
-	UDim2.new(1, -32, 0, 28),
-	Enum.Font.Gotham,
-	12,
-	Color3.fromRGB(170, 190, 220),
-	Enum.TextXAlignment.Left
-)
-bannerSub.TextYAlignment = Enum.TextYAlignment.Top
-
-local bannerBarBack = Instance.new("Frame")
-bannerBarBack.Position = UDim2.new(0, 16, 1, -14)
-bannerBarBack.Size = UDim2.new(1, -32, 0, 6)
-bannerBarBack.BackgroundColor3 = Color3.fromRGB(30, 44, 70)
-bannerBarBack.BorderSizePixel = 0
-bannerBarBack.ZIndex = 41
-bannerBarBack.Parent = spawnBanner
-local bannerBarBackCorner = Instance.new("UICorner")
-bannerBarBackCorner.CornerRadius = UDim.new(1, 0)
-bannerBarBackCorner.Parent = bannerBarBack
+local bannerTime = bannerTitle
+local bannerSub = bannerTitle
 local bannerBar = Instance.new("Frame")
-bannerBar.Size = UDim2.fromScale(1, 1)
-bannerBar.BackgroundColor3 = Color3.fromRGB(0, 220, 255)
-bannerBar.BorderSizePixel = 0
-bannerBar.ZIndex = 42
-bannerBar.Parent = bannerBarBack
-local bannerBarCorner = Instance.new("UICorner")
-bannerBarCorner.CornerRadius = UDim.new(1, 0)
-bannerBarCorner.Parent = bannerBar
+bannerBar.Parent = spawnBanner
+bannerBar.Visible = false
+
+local btnStartNow = Instance.new("TextButton")
+btnStartNow.Name = "BtnStartNow"
+btnStartNow.AnchorPoint = Vector2.new(1, 0.5)
+btnStartNow.Position = UDim2.new(1, -8, 0.5, 0)
+btnStartNow.Size = UDim2.fromOffset(110, 30)
+btnStartNow.BackgroundColor3 = Color3.fromRGB(0, 190, 110)
+btnStartNow.BorderSizePixel = 0
+btnStartNow.Font = Enum.Font.GothamBlack
+btnStartNow.Text = "▶ ¡LISTO!"
+btnStartNow.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnStartNow.TextSize = 12
+btnStartNow.ZIndex = 45
+btnStartNow.Parent = spawnBanner
+roundCorners(btnStartNow, 15)
+
+btnStartNow.MouseButton1Click:Connect(function()
+	WorldCommand:FireServer({ a = "START_NOW" })
+	btnStartNow.Visible = false
+	showToast("⚔️ ¡Comenzando batalla ahora!", Color3.fromRGB(0, 230, 140))
+end)
 
 local function updateSpawnUI()
 	local s = state.stats
@@ -4019,46 +3469,12 @@ local function updateSpawnUI()
 	if not spawning then
 		return
 	end
-	local countries = state.mode == "COUNTRIES"
-	local placed = state.me ~= nil and state.me.alive == true
 	local left = s.spawnTimer or 0
-	bannerTitle.Text = if countries then "🏳️ HISTÓRICO: ELIGE TU PAÍS" else "🌐 FRONTWARS FFA: ELIGE TU CAPITAL"
-	if countries then
-		bannerSub.Text = if placed
-			then "Ya tienes país. Puedes cambiarlo haciendo clic en otro hasta que acabe el tiempo."
-			else "Haz clic sobre un país del mapa o elígelo en la lista (botón 🌍 Países). Los 🔒 ya tienen jugador."
-	else
-		bannerSub.Text = if placed
-			then "Capital fijada. Todos inician con 1.5K tropas y 10K capacidad igualitaria. Puedes cambiarla antes de que acabe el tiempo."
-			else "Haz clic en el mapa para colocar tu base capital. ¡Todos los jugadores inician con 1.5K tropas y 10K capacidad igualitaria!"
-	end
-	bannerTime.Text = "⏱ " .. left .. "s"
-	bannerBar.Size = UDim2.fromScale(math.clamp(left / math.max(1, s.spawnTotal or 25), 0, 1), 1)
-	bannerBar.BackgroundColor3 = if left <= 5 then Color3.fromRGB(255, 90, 90) else Color3.fromRGB(0, 220, 255)
-	spawnBannerStroke.Color = bannerBar.BackgroundColor3
+	local placed = state.me ~= nil and state.me.alive == true
+	bannerTitle.Text = if placed
+		then string.format("✅ Capital fijada · %ds", math.ceil(left))
+		else string.format("📍 Elige el lugar de inicio · %ds", math.ceil(left))
 end
-
--- Botón estilo FrontWars para iniciar la partida de inmediato cuando estés listo
-local btnStartNow = Instance.new("TextButton")
-btnStartNow.Name = "BtnStartNow"
-btnStartNow.Size = UDim2.fromOffset(130, 32)
-btnStartNow.AnchorPoint = Vector2.new(1, 0.5)
-btnStartNow.Position = UDim2.new(1, -16, 0.5, 0)
-btnStartNow.BackgroundColor3 = Color3.fromRGB(0, 190, 110)
-btnStartNow.BorderSizePixel = 0
-btnStartNow.Font = Enum.Font.GothamBlack
-btnStartNow.Text = "▶ ¡LISTO!"
-btnStartNow.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnStartNow.TextSize = 13
-btnStartNow.ZIndex = 45
-btnStartNow.Parent = spawnBanner
-roundCorners(btnStartNow, 6)
-
-btnStartNow.MouseButton1Click:Connect(function()
-	WorldCommand:FireServer({ a = "START_NOW" })
-	btnStartNow.Visible = false
-	showToast("⚔️ ¡Comenzando batalla ahora!", Color3.fromRGB(0, 230, 140))
-end)
 
 -- Anillo reutilizable (círculo con borde) sobre el mapa, dimensionado en celdas
 local function makeRing(parent, zIndex)
@@ -5336,17 +4752,17 @@ WorldStats.OnClientEvent:Connect(function(stats)
 		updateLobbyStatus()
 	end
 
-	-- Actualizar fase
+	-- Actualizar fase y reloj OpenFront.io
 	if stats.phase == "SPAWN" then
-		local what = if state.mode == "COUNTRIES" then "Elige tu país" else "Elige tu capital"
-		phaseText.Text = "📍 FASE DE SPAWN: " .. what .. " (" .. math.ceil(stats.spawnTimer or 0) .. "s)"
-		phaseStroke.Color = Color3.fromRGB(0, 220, 255)
+		local sLeft = math.max(0, math.ceil(stats.spawnTimer or 0))
+		clockLabel.Text = string.format("%02ds", sLeft)
 	elseif stats.phase == "BATTLE" or stats.phase == "RUNNING" then
-		phaseText.Text = "⚔️ ¡GUERRA MUNDIAL! Conquista los continentes"
-		phaseStroke.Color = Color3.fromRGB(255, 60, 60)
+		if stats.time then
+			local t = math.floor(stats.time)
+			clockLabel.Text = string.format("%02d:%02d", math.floor(t / 60), t % 60)
+		end
 	elseif stats.phase == "ENDED" then
-		phaseText.Text = "🏆 ¡PARTIDA FINALIZADA!"
-		phaseStroke.Color = Color3.fromRGB(255, 215, 0)
+		clockLabel.Text = "FIN"
 	end
 
 	-- Actualizar Leaderboard
@@ -5527,17 +4943,16 @@ end
 -- ----------------------------------------------------------------------------
 local btnAlly = Instance.new("TextButton")
 btnAlly.Name = "BtnAlly"
-btnAlly.AnchorPoint = Vector2.new(1, 0.5)
-btnAlly.Position = UDim2.new(1, -386, 0.5, 0)
-btnAlly.Size = UDim2.fromOffset(110, 34)
-btnAlly.BackgroundColor3 = Color3.fromRGB(70, 60, 130)
+btnAlly.Position = UDim2.fromOffset(260, 4)
+btnAlly.Size = UDim2.fromOffset(92, 28)
+btnAlly.BackgroundColor3 = Color3.fromRGB(30, 42, 64)
 btnAlly.Font = Enum.Font.GothamBold
 btnAlly.Text = "🤝 Alianza"
 btnAlly.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnAlly.TextSize = 12
+btnAlly.TextSize = 11
 btnAlly.BorderSizePixel = 0
-btnAlly.ZIndex = 21
-btnAlly.Parent = topBar
+btnAlly.ZIndex = 26
+btnAlly.Parent = inGameDock
 roundCorners(btnAlly, 6)
 
 btnAlly.MouseButton1Click:Connect(function()
