@@ -4,8 +4,3 @@
 /target_repo/
 .DS_Store
 Thumbs.db
-
-tools/.cache/
-tools/__pycache__/
-tools/previews/
-src/shared/satellite_preview.png
