@@ -709,6 +709,7 @@ function OpenFrontUI.create(root, callbacks)
 	local selectedSoloPlanet = "WORLD"
 	local SOLO_MAPS = {
 		{ id = "WORLD", name = "MUNDO", tag = "POPULAR", desc = "61 Naciones · Global FFA", tab = "DESTACADO", icon = "🌐" },
+		{ id = "ACHIRAN", name = "ACHIRAN", tag = "COMPETITIVO", desc = "Isla Estratégica · Alta Táctica", tab = "DESTACADO", icon = "⚔️" },
 		{ id = "EUROPE", name = "EUROPA", tag = "CLÁSICO", desc = "49 Naciones · Alta Densidad", tab = "DESTACADO", icon = "🏰" },
 		{ id = "ASIA", name = "ASIA", tag = "BATALLA", desc = "25 Naciones · Potencias", tab = "DESTACADO", icon = "🏯" },
 		{ id = "AFRICA", name = "ÁFRICA", tag = "ESTRATÉGICO", desc = "36 Naciones · Recursos", tab = "DESTACADO", icon = "🦁" },
@@ -716,6 +717,7 @@ function OpenFrontUI.create(root, callbacks)
 		{ id = "MARS", name = "MARTE", tag = "ESPACIAL", desc = "Planeta Rojo Marciano", tab = "TODO", icon = "🔴" },
 		{ id = "OCEANIA", name = "OCEANÍA", tag = "ISLAS", desc = "32 Naciones · Guerra Naval", tab = "TODO", icon = "🏝️" },
 		{ id = "MENA", name = "MEDIO ORIENTE", tag = "TÁCTICO", desc = "35 Naciones · Petróleo", tab = "TODO", icon = "🏜️" },
+		{ id = "BAIKAL", name = "BAIKAL", tag = "NUCLEAR", desc = "Guerra Nuclear · Caos Total", tab = "TODO", icon = "☢️" },
 	}
 
 	local mapCardFrames = {}

@@ -161,10 +161,27 @@ WorldGrid.PLANETS = {
 		mid = { 24, 96, 154 },
 		shallow = { 48, 136, 196 },
 	},
+	ACHIRAN = {
+		id = "ACHIRAN",
+		name = "Achiran OpenFront (Competitivo)",
+		icon = "⚔️",
+		kind = "frontwars",
+		mapId = "achiran",
+		ocean = { 71, 133, 181 },
+	},
+	BAIKAL = {
+		id = "BAIKAL",
+		name = "Baikal OpenFront (Guerra Nuclear)",
+		icon = "☢️",
+		kind = "frontwars",
+		mapId = "baikal",
+		ocean = { 71, 133, 181 },
+	},
 }
 
 WorldGrid.PLANET_ORDER = {
 	"WORLD",
+	"ACHIRAN",
 	"EUROPE",
 	"ASIA",
 	"AFRICA",
@@ -172,6 +189,7 @@ WorldGrid.PLANET_ORDER = {
 	"MARS",
 	"OCEANIA",
 	"MENA",
+	"BAIKAL",
 	"EARTH",
 	"MOON",
 	"VENUS",
@@ -180,6 +198,7 @@ WorldGrid.PLANET_ORDER = {
 
 -- Alias insensibles a mayúsculas para compatibilidad total con OpenFront
 WorldGrid.PLANETS.world = WorldGrid.PLANETS.WORLD
+WorldGrid.PLANETS.achiran = WorldGrid.PLANETS.ACHIRAN
 WorldGrid.PLANETS.europe = WorldGrid.PLANETS.EUROPE
 WorldGrid.PLANETS.asia = WorldGrid.PLANETS.ASIA
 WorldGrid.PLANETS.africa = WorldGrid.PLANETS.AFRICA
@@ -188,6 +207,7 @@ WorldGrid.PLANETS.pangea = WorldGrid.PLANETS.PANGAEA
 WorldGrid.PLANETS.mars = WorldGrid.PLANETS.MARS
 WorldGrid.PLANETS.oceania = WorldGrid.PLANETS.OCEANIA
 WorldGrid.PLANETS.mena = WorldGrid.PLANETS.MENA
+WorldGrid.PLANETS.baikal = WorldGrid.PLANETS.BAIKAL
 WorldGrid.PLANETS.earth = WorldGrid.PLANETS.EARTH
 
 -- ============================================================================
@@ -1718,7 +1738,7 @@ function WorldGrid.Generate(planetId)
 			end
 		end
 	elseif def.kind == "frontwars" then
-		-- Carga el mapa de pixeles autentico de FrontWars / OpenFront desde el modulo modular
+		-- Carga el mapa de pixeles autentico de OpenFront.io con resolucion nativa 1:1
 		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
 		if not fwmModule then
 			local rs = game:GetService("ReplicatedStorage")
@@ -1729,17 +1749,13 @@ function WorldGrid.Generate(planetId)
 		if mapModule then
 			local mapData = require(mapModule)
 			local maskBuf = decodeBase64ToBuffer(mapData.maskB64)
-			local mw, mh = mapData.w, mapData.h
-			for y = 0, H - 1 do
-				local my = math.floor((y / H) * mh)
-				for x = 0, W - 1 do
-					local mx = math.floor((x / W) * mw)
-					local bitIdx = my * mw + mx
-					local byteVal = buffer.readu8(maskBuf, bitIdx // 8)
-					local bit = bit32.band(bit32.rshift(byteVal, bitIdx % 8), 1)
-					if bit == 1 then
-						buffer.writeu8(land, y * W + x, 1)
-					end
+			W, H = mapData.w, mapData.h
+			land = buffer.create(W * H)
+			for i = 0, W * H - 1 do
+				local byteVal = buffer.readu8(maskBuf, i // 8)
+				local bit = bit32.band(bit32.rshift(byteVal, i % 8), 1)
+				if bit == 1 then
+					buffer.writeu8(land, i, 1)
 				end
 			end
 		end

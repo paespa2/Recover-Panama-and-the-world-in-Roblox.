@@ -120,11 +120,20 @@ def main():
         print(f"FrontWarsMaps synced: {l} bytes")
 
         print("--- 5. Syncing FrontWars Maps ---")
-        maps = ['world', 'pangaea', 'europe', 'asia', 'africa', 'mena', 'mars', 'oceania']
+        maps = ['world', 'pangaea', 'europe', 'asia', 'africa', 'mena', 'mars', 'oceania', 'achiran', 'baikal']
         for m in maps:
             fpath = f"src/shared/frontwars_maps/{m}.lua"
             with open(fpath, "r", encoding="utf-8") as f:
                 src = f.read()
+            # Ensure module exists
+            client.execute_luau(f'''
+local folder = game:GetService("ReplicatedStorage").Shared.frontwars_maps
+if not folder:FindFirstChild("{m}") then
+    local mod = Instance.new("ModuleScript")
+    mod.Name = "{m}"
+    mod.Parent = folder
+end
+''')
             target = f'game:GetService("ReplicatedStorage").Shared.frontwars_maps.{m}'
             l = client.set_script_source(target, src)
             print(f"Map {m} synced: {l} bytes")
