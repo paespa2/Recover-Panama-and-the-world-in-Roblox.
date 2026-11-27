@@ -1746,6 +1746,9 @@ function WorldGrid.Generate(planetId)
 			fwmModule = sh and sh:FindFirstChild("frontwars_maps")
 		end
 		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
+		local mapNations = nil
+		local elevBuf = nil
+		local impBuf = nil
 		if mapModule then
 			local mapData = require(mapModule)
 			local maskBuf = decodeBase64ToBuffer(mapData.maskB64)
@@ -1758,7 +1761,60 @@ function WorldGrid.Generate(planetId)
 					buffer.writeu8(land, i, 1)
 				end
 			end
+
+			-- Decodificar elevación oficial por celdas (nibble 0-14)
+			if mapData.elevB64 and #mapData.elevB64 > 0 then
+				elevBuf = buffer.create(W * H)
+				local packedElev = decodeBase64ToBuffer(mapData.elevB64)
+				local landIdx = 0
+				for i = 0, W * H - 1 do
+					if buffer.readu8(land, i) == 1 then
+						local bIdx = landIdx // 2
+						if bIdx < buffer.len(packedElev) then
+							local byteVal = buffer.readu8(packedElev, bIdx)
+							local nibble = if landIdx % 2 == 0 then bit32.band(byteVal, 0x0f) else bit32.rshift(byteVal, 4)
+							buffer.writeu8(elevBuf, i, nibble)
+						end
+						landIdx += 1
+					end
+				end
+			end
+
+			-- Decodificar máscara de montañas infranqueables (bits magnitud 31)
+			if mapData.impB64 and #mapData.impB64 > 0 then
+				impBuf = buffer.create(W * H)
+				local packedImp = decodeBase64ToBuffer(mapData.impB64)
+				for i = 0, W * H - 1 do
+					local bIdx = i // 8
+					if bIdx < buffer.len(packedImp) then
+						local byteVal = buffer.readu8(packedImp, bIdx)
+						local bit = bit32.band(bit32.rshift(byteVal, i % 8), 1)
+						if bit == 1 then
+							buffer.writeu8(impBuf, i, 1)
+						end
+					end
+				end
+			end
+			mapNations = mapData.nations
 		end
+
+		local count = 0
+		for i = 0, W * H - 1 do
+			if buffer.readu8(land, i) == 1 then
+				count += 1
+			end
+		end
+
+		return {
+			w = W,
+			h = H,
+			land = land,
+			landCount = count,
+			def = def,
+			elev = elevBuf,
+			impassable = impBuf,
+			nations = mapNations,
+		}
 	end
 
 	local count = 0
@@ -1950,12 +2006,14 @@ local function planetPixel(def, x, y)
 	return r, g, b, math.clamp(1.0 - (dzdx + dzdy) * 2.4, 0.62, 1.4)
 end
 
-function WorldGrid.BuildBase(planetId, land, customW, customH)
+function WorldGrid.BuildBase(planetId, land, customW, customH, customElev, customImp)
 	local def = WorldGrid.PLANETS[planetId] or WorldGrid.PLANETS.EARTH
 	local mapW = customW or W
 	local mapH = customH or H
+	local elevBuf = customElev
+	local impBuf = customImp
 
-	if def.kind == "frontwars" and def.mapId and (not customW or not customH) then
+	if def.kind == "frontwars" and def.mapId then
 		local fwmModule = script.Parent:FindFirstChild("frontwars_maps")
 		if not fwmModule then
 			local rs = game:GetService("ReplicatedStorage")
@@ -1965,7 +2023,39 @@ function WorldGrid.BuildBase(planetId, land, customW, customH)
 		local mapModule = fwmModule and fwmModule:FindFirstChild(def.mapId)
 		if mapModule then
 			local mapData = require(mapModule)
-			mapW, mapH = mapData.w, mapData.h
+			if not customW or not customH then
+				mapW, mapH = mapData.w, mapData.h
+			end
+			if not elevBuf and mapData.elevB64 and #mapData.elevB64 > 0 then
+				elevBuf = buffer.create(mapW * mapH)
+				local packedElev = decodeBase64ToBuffer(mapData.elevB64)
+				local landIdx = 0
+				for i = 0, mapW * mapH - 1 do
+					if i < buffer.len(land) and buffer.readu8(land, i) == 1 then
+						local bIdx = landIdx // 2
+						if bIdx < buffer.len(packedElev) then
+							local byteVal = buffer.readu8(packedElev, bIdx)
+							local nibble = if landIdx % 2 == 0 then bit32.band(byteVal, 0x0f) else bit32.rshift(byteVal, 4)
+							buffer.writeu8(elevBuf, i, nibble)
+						end
+						landIdx += 1
+					end
+				end
+			end
+			if not impBuf and mapData.impB64 and #mapData.impB64 > 0 then
+				impBuf = buffer.create(mapW * mapH)
+				local packedImp = decodeBase64ToBuffer(mapData.impB64)
+				for i = 0, mapW * mapH - 1 do
+					local bIdx = i // 8
+					if bIdx < buffer.len(packedImp) then
+						local byteVal = buffer.readu8(packedImp, bIdx)
+						local bit = bit32.band(bit32.rshift(byteVal, i % 8), 1)
+						if bit == 1 then
+							buffer.writeu8(impBuf, i, 1)
+						end
+					end
+				end
+			end
 		end
 	end
 
@@ -2016,8 +2106,34 @@ function WorldGrid.BuildBase(planetId, land, customW, customH)
 				shade = math.clamp(1.0 - (dz_dx + dz_dy) * 0.32, 0.72, 1.35)
 
 				if def.kind == "frontwars" then
-					-- Paleta oficial OpenFront.io (#BEDC8A: llanuras)
-					r, g, b = 190, 220, 138
+					local isShore = not (isLand(x - 1, y) and isLand(x + 1, y) and isLand(x, y - 1) and isLand(x, y + 1))
+					local isImp = (impBuf and buffer.readu8(impBuf, i) == 1)
+					local el = if elevBuf then buffer.readu8(elevBuf, i) else 0
+
+					if isImp then
+						-- Montañas infranqueables estilo OpenFront (canvas #3c3c3c)
+						r, g, b = 60, 60, 60
+					elseif isShore then
+						-- Playas / arena dorada de la costa (#CCCB9E)
+						r, g, b = 204, 203, 158
+					elseif el < 5 then
+						-- Llanuras fértiles (#BEDC8A)
+						r = 190
+						g = math.clamp(220 - el * 3, 180, 255)
+						b = 138
+					elseif el < 10 then
+						-- Tierras altas (#C8B78A)
+						local m = el - 5
+						r = math.min(255, 200 + m * 5)
+						g = math.min(255, 183 + m * 4)
+						b = math.min(255, 138 + m * 3)
+					else
+						-- Picos montañosos y cumbres de nieve (#E6E6E6)
+						local m = el - 10
+						r = math.min(255, 230 + m * 5)
+						g = math.min(255, 230 + m * 5)
+						b = math.min(255, 230 + m * 5)
+					end
 				elseif def.kind == "earth" then
 					r, g, b = earthLandColor(x, y)
 					if def.kind == "pangea" then
@@ -2027,7 +2143,6 @@ function WorldGrid.BuildBase(planetId, land, customW, customH)
 					local u = ((x + 0.5) / mapW) * 2 - 1
 					local v = ((y + 0.5) / mapH) * 2 - 1
 					local rr = math.min(1, math.sqrt(u * u + v * v) * 1.1)
-					-- Brazos espirales con polvo y estrellas dispersas
 					local theta = math.atan2(v, u)
 					local arm = (math.sin(2 * theta - rr * 9) + 1) * 0.5
 					local dust = (math.noise(x * 0.05, y * 0.07, 2.2) + 1) * 0.5
@@ -2058,14 +2173,30 @@ function WorldGrid.BuildBase(planetId, land, customW, customH)
 					near2 = true
 				end
 
-				local c = def.ocean or { 71, 133, 181 }
-				if near1 then
-					c = def.shallow or { 60, 120, 170 }
-				elseif near2 then
-					c = def.mid or { 50, 110, 160 }
+				if def.kind == "frontwars" then
+					if near1 then
+						-- Agua costera poco profunda (cian claro: 70% océano + 30% blanco)
+						r, g, b = 126, 170, 203
+					elseif near2 then
+						-- Plataforma continental
+						r, g, b = 95, 150, 192
+					else
+						-- Océano profundo (#4785b5), con leve variación de profundidad
+						local depthDim = math.min(25, math.floor(math.noise(x * 0.05, y * 0.05, 1.2) * 20))
+						r = math.clamp(71 - depthDim, 40, 71)
+						g = math.clamp(133 - depthDim, 90, 133)
+						b = math.clamp(181 - depthDim, 140, 181)
+					end
+				else
+					local c = def.ocean or { 71, 133, 181 }
+					if near1 then
+						c = def.shallow or { 60, 120, 170 }
+					elseif near2 then
+						c = def.mid or { 50, 110, 160 }
+					end
+					local oceanShade = 1.0 + math.noise(x * 0.1, y * 0.1, 1.7) * 0.05
+					r, g, b = c[1] * oceanShade, c[2] * oceanShade, c[3] * oceanShade
 				end
-				local oceanShade = 1.0 + math.noise(x * 0.1, y * 0.1, 1.7) * 0.05
-				r, g, b = c[1] * oceanShade, c[2] * oceanShade, c[3] * oceanShade
 			end
 
 			local o = i * 3

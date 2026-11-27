@@ -339,6 +339,38 @@ function Engine.new(planetId, botCount, difficulty, mode, seed)
 		return self
 	end
 
+	-- Si el mapa tiene naciones oficiales de OpenFront.io, las usamos directamente con sus capitales
+	local mapNations = grid.nations
+	if mapNations and #mapNations > 0 then
+		local shuffled = table.clone(mapNations)
+		for i = #shuffled, 2, -1 do
+			local j = self.rng:NextInteger(1, i)
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		end
+		local count = math.min(#shuffled, math.clamp(math.floor(botCount or #shuffled), 1, 100))
+		for i = 1, count do
+			local natDef = shuffled[i]
+			local nName = natDef.name
+			local col = botColor(i)
+			local team = nil
+			if self.mode == "TEAMS_2" then
+				team = if (i % 2 == 1) then "BLUE" else "RED"
+				col = if team == "BLUE" then Color3.fromRGB(0, 190, 255) else Color3.fromRGB(255, 65, 65)
+				nName = (if team == "BLUE" then "🔵 " else "🔴 ") .. nName
+			end
+			local n = self:addNation(nName, col, true, nil)
+			n.team = team
+			n.flag = natDef.flag
+			local capCell = natDef.y * self.w + natDef.x
+			if capCell >= 0 and capCell < self.size and buffer.readu8(self.land, capCell) == 1 then
+				self:claimInitial(n, capCell)
+			else
+				self:autoSpawn(n, true)
+			end
+		end
+		return self
+	end
+
 	local names = table.clone(BOT_NAMES)
 	for i = #names, 2, -1 do
 		local j = self.rng:NextInteger(1, i)
