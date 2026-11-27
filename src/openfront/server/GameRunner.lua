@@ -10,8 +10,10 @@ local GameMap = require(script.Parent.GameMap)
 local Player = require(script.Parent.Player)
 local UnitGrid = require(script.Parent.UnitGrid)
 local ExecutionManager = require(script.Parent.ExecutionManager)
-local Config = require(script.Parent.Parent.shared.Config)
-local EngineConfig = require(script.Parent.Parent.Parent.shared.EngineConfig)
+local RS = game:GetService("ReplicatedStorage")
+local Shared = RS:WaitForChild("OpenFront"):WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local EngineConfig = require(Shared:WaitForChild("EngineConfig"))
 
 -- Executions
 local AttackExecution = require(script.Parent.execution.AttackExecution)

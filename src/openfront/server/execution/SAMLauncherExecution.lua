@@ -2,7 +2,8 @@
 -- OpenFront.io: SAMLauncherExecution
 -- Parity with packages/engine/src/execution/SAMLauncherExecution.ts
 
-local Config = require(script.Parent.Parent.Parent.shared.Config)
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS:WaitForChild("OpenFront"):WaitForChild("Shared"):WaitForChild("Config"))
 
 local SAMLauncherExecution = {}
 SAMLauncherExecution.__index = SAMLauncherExecution

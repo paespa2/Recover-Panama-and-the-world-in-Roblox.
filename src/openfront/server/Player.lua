@@ -2,7 +2,8 @@
 -- OpenFront.io: Player
 -- Parity with packages/engine/src/game/Player.ts
 
-local Config = require(script.Parent.Parent.shared.Config)
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS:WaitForChild("OpenFront"):WaitForChild("Shared"):WaitForChild("Config"))
 
 local Player = {}
 Player.__index = Player

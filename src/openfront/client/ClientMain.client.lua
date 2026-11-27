@@ -10,7 +10,8 @@ local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui") :: PlayerGui
 
-local MapRegistry = require(script.Parent.Parent.shared.MapRegistry)
+local Shared = ReplicatedStorage:WaitForChild("OpenFront"):WaitForChild("Shared")
+local MapRegistry = require(Shared:WaitForChild("MapRegistry"))
 local TerrainRenderer = require(script.Parent.TerrainRenderer)
 local TerritoryRenderer = require(script.Parent.TerritoryRenderer)
 local InGameHUD = require(script.Parent.InGameHUD)
@@ -96,7 +97,7 @@ local function updateCanvasTransform()
 	mapCanvas.Position = UDim2.new(camPos.X, 0, camPos.Y, 0)
 end
 
-local function screenToTile(screenPos: Vector2): (number, number)?
+local function screenToTile(screenPos: Vector2): (number?, number?)
 	if not currentMapData then return nil, nil end
 	local canvasAbs = mapCanvas.AbsolutePosition
 	local canvasSize = mapCanvas.AbsoluteSize
@@ -211,7 +212,7 @@ end)
 
 -- Server Snapshot Listener
 serverSnapshotEvent.OnClientEvent:Connect(function(payload)
-	if not payload or not currentMapData then return end
+	if not payload or not currentMapData or not territoryRenderer.ownerBuffer then return end
 
 	-- Update roster in territory renderer
 	if payload.players then

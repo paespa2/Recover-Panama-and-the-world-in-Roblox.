@@ -2,7 +2,8 @@
 -- OpenFront.io: NukeExecution
 -- Parity with packages/engine/src/execution/NukeExecution.ts
 
-local Config = require(script.Parent.Parent.Parent.shared.Config)
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS:WaitForChild("OpenFront"):WaitForChild("Shared"):WaitForChild("Config"))
 
 local NukeExecution = {}
 NukeExecution.__index = NukeExecution

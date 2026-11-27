@@ -1,22 +1,32 @@
 --!strict
 -- OpenFront.io: TerrainRenderer
--- Renders authentic OpenFront pixel shader terrain into EditableImage or Canvas
+-- Renders authentic OpenFront pixel shader terrain into EditableImage or high-performance Block Canvas
 
 local AssetService = game:GetService("AssetService")
-local MapRegistry = require(script.Parent.Parent.shared.MapRegistry)
-local TerrainBytes = require(script.Parent.Parent.shared.TerrainBytes)
+local RS = game:GetService("ReplicatedStorage")
+local Shared = RS:WaitForChild("OpenFront"):WaitForChild("Shared")
+local MapRegistry = require(Shared:WaitForChild("MapRegistry"))
+local TerrainBytes = require(Shared:WaitForChild("TerrainBytes"))
 
 local TerrainRenderer = {}
 TerrainRenderer.__index = TerrainRenderer
 
+local BLOCK = 3 -- 3x3 pixel block grid fallback for seamless 60fps rendering
+
 export type TerrainRendererInstance = {
 	w: number,
 	h: number,
+	bw: number,
+	bh: number,
 	totalTiles: number,
 	baseBuffer: buffer,
 	pixelBuffer: buffer,
 	editableImage: any,
 	imageLabel: ImageLabel,
+	canvasParent: Frame,
+	blockMode: boolean,
+	blockFrames: { [number]: Frame },
+	dirtyBlocks: { [number]: Color3 },
 	dirtyX0: number,
 	dirtyY0: number,
 	dirtyX1: number,
@@ -32,7 +42,12 @@ function TerrainRenderer.new(): TerrainRendererInstance
 	local self = setmetatable({}, TerrainRenderer)
 	self.w = 0
 	self.h = 0
+	self.bw = 0
+	self.bh = 0
 	self.totalTiles = 0
+	self.blockMode = false
+	self.blockFrames = {}
+	self.dirtyBlocks = {}
 	self.dirtyX0 = math.huge
 	self.dirtyY0 = math.huge
 	self.dirtyX1 = -1
@@ -45,9 +60,10 @@ function TerrainRenderer:Init(mapData: any, targetImageLabel: ImageLabel): boole
 	self.h = mapData.h
 	self.totalTiles = self.w * self.h
 	self.imageLabel = targetImageLabel
+	self.canvasParent = targetImageLabel.Parent :: Frame
 
-	self.baseBuffer = buffer.create(self.totalTiles * 3) -- RGB base
-	self.pixelBuffer = buffer.create(self.totalTiles * 4) -- RGBA display
+	self.baseBuffer = buffer.create(self.totalTiles * 3)
+	self.pixelBuffer = buffer.create(self.totalTiles * 4)
 
 	-- Decode terrain
 	local maskRaw = MapRegistry.DecodeB64(mapData.maskB64)
@@ -95,23 +111,17 @@ function TerrainRenderer:Init(mapData: any, targetImageLabel: ImageLabel): boole
 			local r, g, b = 71, 133, 181 -- Deep ocean: #4785b5
 			if isLand then
 				if isImpassable then
-					-- Impassable mountain ridge: #3c3c3c
 					r, g, b = 60, 60, 60
 				elseif elevation >= 10 then
-					-- Snow/Mountain peaks: #E6E6E6
 					r, g, b = 230, 230, 230
 				elseif elevation >= 6 then
-					-- Highlands: #C8B78A
 					r, g, b = 200, 183, 138
 				elseif elevation >= 3 then
-					-- Plains: #BEDC8A
 					r, g, b = 190, 220, 138
 				else
-					-- Lowland / coastal plain: #CCCB9E
 					r, g, b = 204, 203, 158
 				end
 			else
-				-- Ocean depth gradient
 				local depthRatio = math.clamp(y / self.h, 0, 1)
 				r = math.floor(126 - depthRatio * 55)
 				g = math.floor(170 - depthRatio * 37)
@@ -143,11 +153,60 @@ function TerrainRenderer:Init(mapData: any, targetImageLabel: ImageLabel): boole
 		if okWrite then
 			self.editableImage = img
 			self.imageLabel.ImageContent = Content.fromObject(img)
+			self.blockMode = false
 			return true
 		end
 	end
 
-	return false
+	-- Fallback to high-performance Block Canvas Grid
+	self:InitBlockMode()
+	return true
+end
+
+function TerrainRenderer:InitBlockMode()
+	self.blockMode = true
+	self.imageLabel.Visible = false
+
+	local oldLayer = self.canvasParent:FindFirstChild("BlockLayer")
+	if oldLayer then oldLayer:Destroy() end
+
+	local layer = Instance.new("Frame")
+	layer.Name = "BlockLayer"
+	layer.Size = UDim2.fromScale(1, 1)
+	layer.BackgroundTransparency = 1
+	layer.BorderSizePixel = 0
+	layer.Parent = self.canvasParent
+
+	self.bw = math.ceil(self.w / BLOCK)
+	self.bh = math.ceil(self.h / BLOCK)
+	self.blockFrames = {}
+	self.dirtyBlocks = {}
+
+	local bw, bh = self.bw, self.bh
+	local w, h = self.w, self.h
+
+	for by = 0, bh - 1 do
+		local cy = math.clamp(by * BLOCK + 1, 0, h - 1)
+		for bx = 0, bw - 1 do
+			local cx = math.clamp(bx * BLOCK + 1, 0, w - 1)
+			local idx = cy * w + cx
+			local o3 = idx * 3
+
+			local r = buffer.readu8(self.baseBuffer, o3)
+			local g = buffer.readu8(self.baseBuffer, o3 + 1)
+			local b = buffer.readu8(self.baseBuffer, o3 + 2)
+
+			local f = Instance.new("Frame")
+			f.BorderSizePixel = 0
+			f.Size = UDim2.fromScale(1 / bw, 1 / bh)
+			f.Position = UDim2.fromScale(bx / bw, by / bh)
+			f.BackgroundColor3 = Color3.fromRGB(r, g, b)
+			f.Parent = layer
+
+			local bIdx = by * bw + bx
+			self.blockFrames[bIdx] = f
+		end
+	end
 end
 
 function TerrainRenderer:DrawCell(idx: number, r: number, g: number, b: number)
@@ -157,12 +216,21 @@ function TerrainRenderer:DrawCell(idx: number, r: number, g: number, b: number)
 	buffer.writeu8(self.pixelBuffer, o4 + 1, g)
 	buffer.writeu8(self.pixelBuffer, o4 + 2, b)
 
-	local x = idx % self.w
-	local y = math.floor(idx / self.w)
-	if x < self.dirtyX0 then self.dirtyX0 = x end
-	if y < self.dirtyY0 then self.dirtyY0 = y end
-	if x > self.dirtyX1 then self.dirtyX1 = x end
-	if y > self.dirtyY1 then self.dirtyY1 = y end
+	if self.blockMode then
+		local x = idx % self.w
+		local y = math.floor(idx / self.w)
+		local bx = math.floor(x / BLOCK)
+		local by = math.floor(y / BLOCK)
+		local bIdx = by * self.bw + bx
+		self.dirtyBlocks[bIdx] = Color3.fromRGB(r, g, b)
+	else
+		local x = idx % self.w
+		local y = math.floor(idx / self.w)
+		if x < self.dirtyX0 then self.dirtyX0 = x end
+		if y < self.dirtyY0 then self.dirtyY0 = y end
+		if x > self.dirtyX1 then self.dirtyX1 = x end
+		if y > self.dirtyY1 then self.dirtyY1 = y end
+	end
 end
 
 function TerrainRenderer:ResetToTerrain(idx: number)
@@ -175,6 +243,17 @@ function TerrainRenderer:ResetToTerrain(idx: number)
 end
 
 function TerrainRenderer:Flush()
+	if self.blockMode then
+		for bIdx, color in pairs(self.dirtyBlocks) do
+			local f = self.blockFrames[bIdx]
+			if f then
+				f.BackgroundColor3 = color
+			end
+		end
+		self.dirtyBlocks = {}
+		return
+	end
+
 	if not self.editableImage or self.dirtyX1 < 0 then return end
 
 	local x0 = self.dirtyX0
@@ -192,7 +271,6 @@ function TerrainRenderer:Flush()
 			self.editableImage:WritePixelsBuffer(Vector2.zero, Vector2.new(self.w, self.h), self.pixelBuffer)
 		end)
 	else
-		-- Extract sub-buffer for dirty rectangle
 		local subBuf = buffer.create(dw * dh * 4)
 		local subPos = 0
 		for row = 0, dh - 1 do

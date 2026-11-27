@@ -2,8 +2,10 @@
 -- OpenFront.io: GameMap
 -- Fast buffer-based terrain and ownership grid
 
-local TerrainBytes = require(script.Parent.Parent.shared.TerrainBytes)
-local MapRegistry = require(script.Parent.Parent.shared.MapRegistry)
+local RS = game:GetService("ReplicatedStorage")
+local Shared = RS:WaitForChild("OpenFront"):WaitForChild("Shared")
+local TerrainBytes = require(Shared:WaitForChild("TerrainBytes"))
+local MapRegistry = require(Shared:WaitForChild("MapRegistry"))
 
 local GameMap = {}
 GameMap.__index = GameMap

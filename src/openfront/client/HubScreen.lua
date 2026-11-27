@@ -2,7 +2,8 @@
 -- OpenFront.io: HubScreen
 -- Parity with OpenFront Main Menu, Solo Modal, and Map Selection
 
-local MapRegistry = require(script.Parent.Parent.shared.MapRegistry)
+local RS = game:GetService("ReplicatedStorage")
+local MapRegistry = require(RS:WaitForChild("OpenFront"):WaitForChild("Shared"):WaitForChild("MapRegistry"))
 
 local HubScreen = {}
 HubScreen.__index = HubScreen

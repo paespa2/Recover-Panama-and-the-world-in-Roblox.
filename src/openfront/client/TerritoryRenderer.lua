@@ -43,6 +43,7 @@ function TerritoryRenderer:SetPlayerRoster(players: { any }, mySmallID: number)
 end
 
 function TerritoryRenderer:ApplyDeltas(deltas: { { tileIdx: number, ownerSmallID: number } })
+	if not self.ownerBuffer or not self.terrainRenderer then return end
 	local tr = self.terrainRenderer
 	local ob = self.ownerBuffer
 	local w, h = self.w, self.h

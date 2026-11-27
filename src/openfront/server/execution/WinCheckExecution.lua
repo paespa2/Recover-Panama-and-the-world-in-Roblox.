@@ -2,7 +2,8 @@
 -- OpenFront.io: WinCheckExecution
 -- Parity with packages/engine/src/execution/WinCheckExecution.ts
 
-local Config = require(script.Parent.Parent.Parent.shared.Config)
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS:WaitForChild("OpenFront"):WaitForChild("Shared"):WaitForChild("Config"))
 
 local WinCheckExecution = {}
 WinCheckExecution.__index = WinCheckExecution

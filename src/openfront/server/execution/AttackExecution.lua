@@ -2,8 +2,10 @@
 -- OpenFront.io: AttackExecution
 -- Parity with packages/engine/src/execution/AttackExecution.ts
 
-local EngineConfig = require(script.Parent.Parent.Parent.shared.EngineConfig)
-local Config = require(script.Parent.Parent.Parent.shared.Config)
+local RS = game:GetService("ReplicatedStorage")
+local Shared = RS:WaitForChild("OpenFront"):WaitForChild("Shared")
+local EngineConfig = require(Shared:WaitForChild("EngineConfig"))
+local Config = require(Shared:WaitForChild("Config"))
 
 local AttackExecution = {}
 AttackExecution.__index = AttackExecution
