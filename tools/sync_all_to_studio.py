@@ -47,7 +47,10 @@ class StudioClient:
         })
         content_text = resp["result"]["content"][0]["text"]
         data = json.loads(content_text)
-        studio = data["studios"][0]
+        studios = data.get("studios", [])
+        if not studios:
+            raise RuntimeError("No active Roblox Studio instance found. Please launch Roblox Studio!")
+        studio = studios[0]
         mode_str = studio.get("mode", "Edit")
         print(f"Found Studio: {studio['name']} (ID: {studio['id']}, Mode: {mode_str})")
         return studio["id"]
@@ -66,6 +69,19 @@ class StudioClient:
         if is_error:
             raise RuntimeError(f"Luau execution error: {result_text}")
         return result_text
+
+    def ensure_instance(self, parent_expr, class_name, name):
+        code = f"""
+local p = {parent_expr}
+local child = p:FindFirstChild("{name}")
+if not child then
+    child = Instance.new("{class_name}")
+    child.Name = "{name}"
+    child.Parent = p
+end
+return child.Name
+"""
+        return self.execute_luau(code)
 
     def set_script_source(self, target_path, source_code, chunk_size=10000):
         raw_bytes = source_code.encode("utf-8")
@@ -92,67 +108,117 @@ return tostring(#({target_path}.Source))
     def close(self):
         self.proc.terminate()
 
-def main():
-    client = StudioClient()
-    try:
-        print("--- 1. Syncing WorldServer ---")
-        with open("src/server/WorldServer.server.lua", "r", encoding="utf-8") as f:
-            src = f.read()
-        l = client.set_script_source('game:GetService("ServerScriptService").Server.WorldServer', src)
-        print(f"WorldServer synced: {l} bytes")
+def sync_openfront(client):
+    print("=== SYNCHRONIZING OPENFRONT ARCHITECTURE TO ROBLOX STUDIO ===")
 
-        print("--- 2. Syncing WorldGrid ---")
-        with open("src/shared/WorldGrid.lua", "r", encoding="utf-8") as f:
-            src = f.read()
-        l = client.set_script_source('game:GetService("ReplicatedStorage").Shared.WorldGrid', src)
-        print(f"WorldGrid synced: {l} bytes")
+    # 1. Ensure folders in ReplicatedStorage, ServerScriptService, StarterPlayerScripts
+    client.ensure_instance('game:GetService("ReplicatedStorage")', "Folder", "OpenFront")
+    client.ensure_instance('game:GetService("ReplicatedStorage").OpenFront', "Folder", "Shared")
+    client.ensure_instance('game:GetService("ReplicatedStorage")', "Folder", "Shared")
+    client.ensure_instance('game:GetService("ReplicatedStorage").Shared', "Folder", "frontwars_maps")
 
-        print("--- 3. Syncing WorldEngine ---")
-        with open("src/server/WorldEngine.lua", "r", encoding="utf-8") as f:
-            src = f.read()
-        l = client.set_script_source('game:GetService("ServerScriptService").Server.WorldEngine', src)
-        print(f"WorldEngine synced: {l} bytes")
+    client.ensure_instance('game:GetService("ServerScriptService")', "Folder", "OpenFront")
+    client.ensure_instance('game:GetService("ServerScriptService").OpenFront', "Folder", "Server")
+    client.ensure_instance('game:GetService("ServerScriptService").OpenFront.Server', "Folder", "execution")
 
-        print("--- 4. Syncing FrontWarsMaps Module ---")
-        with open("src/shared/FrontWarsMaps.lua", "r", encoding="utf-8") as f:
-            src = f.read()
-        l = client.set_script_source('game:GetService("ReplicatedStorage").Shared.FrontWarsMaps', src)
-        print(f"FrontWarsMaps synced: {l} bytes")
+    client.ensure_instance('game:GetService("StarterPlayer").StarterPlayerScripts', "Folder", "OpenFront")
+    client.ensure_instance('game:GetService("StarterPlayer").StarterPlayerScripts.OpenFront', "Folder", "Client")
 
-        print("--- 5. Syncing FrontWars Maps ---")
-        maps = ['world', 'pangaea', 'europe', 'asia', 'africa', 'mena', 'mars', 'oceania', 'achiran', 'baikal']
-        for m in maps:
-            fpath = f"src/shared/frontwars_maps/{m}.lua"
+    # 2. Sync Shared Modules
+    shared_files = ["GameTypes", "TerrainBytes", "Config", "EngineConfig", "MapRegistry"]
+    for mod_name in shared_files:
+        fpath = f"src/openfront/shared/{mod_name}.lua"
+        if os.path.exists(fpath):
             with open(fpath, "r", encoding="utf-8") as f:
                 src = f.read()
-            # Ensure module exists
-            client.execute_luau(f'''
-local folder = game:GetService("ReplicatedStorage").Shared.frontwars_maps
-if not folder:FindFirstChild("{m}") then
-    local mod = Instance.new("ModuleScript")
-    mod.Name = "{m}"
-    mod.Parent = folder
-end
-''')
+            client.ensure_instance('game:GetService("ReplicatedStorage").OpenFront.Shared', "ModuleScript", mod_name)
+            target = f'game:GetService("ReplicatedStorage").OpenFront.Shared.{mod_name}'
+            l = client.set_script_source(target, src)
+            print(f"  [Shared] {mod_name} synced: {l} bytes")
+
+    # 3. Sync FrontWars Maps
+    maps = ['world', 'pangaea', 'europe', 'asia', 'africa', 'mena', 'mars', 'oceania', 'achiran', 'baikal']
+    for m in maps:
+        fpath = f"src/shared/frontwars_maps/{m}.lua"
+        if os.path.exists(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                src = f.read()
+            client.ensure_instance('game:GetService("ReplicatedStorage").Shared.frontwars_maps', "ModuleScript", m)
             target = f'game:GetService("ReplicatedStorage").Shared.frontwars_maps.{m}'
             l = client.set_script_source(target, src)
-            print(f"Map {m} synced: {l} bytes")
+            print(f"  [Map] {m} synced: {l} bytes")
 
-        print("--- 6. Syncing OpenFrontUI ---")
-        with open("src/client/OpenFrontUI.lua", "r", encoding="utf-8") as f:
+    # 4. Sync Server Execution Modules
+    exec_modules = [
+        "AttackExecution", "TransportShipExecution", "WarshipExecution",
+        "ConstructionExecution", "NukeExecution", "MIRVExecution",
+        "SAMLauncherExecution", "WinCheckExecution", "NationExecution"
+    ]
+    for mod_name in exec_modules:
+        fpath = f"src/openfront/server/execution/{mod_name}.lua"
+        if os.path.exists(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                src = f.read()
+            client.ensure_instance('game:GetService("ServerScriptService").OpenFront.Server.execution', "ModuleScript", mod_name)
+            target = f'game:GetService("ServerScriptService").OpenFront.Server.execution.{mod_name}'
+            l = client.set_script_source(target, src)
+            print(f"  [Server.execution] {mod_name} synced: {l} bytes")
+
+    # 5. Sync Server Core Modules
+    server_core = ["GameMap", "Player", "UnitGrid", "ExecutionManager", "GameRunner"]
+    for mod_name in server_core:
+        fpath = f"src/openfront/server/{mod_name}.lua"
+        if os.path.exists(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                src = f.read()
+            client.ensure_instance('game:GetService("ServerScriptService").OpenFront.Server', "ModuleScript", mod_name)
+            target = f'game:GetService("ServerScriptService").OpenFront.Server.{mod_name}'
+            l = client.set_script_source(target, src)
+            print(f"  [Server] {mod_name} synced: {l} bytes")
+
+    # 6. Sync ServerMain Script
+    fpath = "src/openfront/server/ServerMain.server.lua"
+    if os.path.exists(fpath):
+        with open(fpath, "r", encoding="utf-8") as f:
             src = f.read()
-        l = client.set_script_source('game:GetService("StarterPlayer").StarterPlayerScripts.Client.OpenFrontUI', src)
-        print(f"OpenFrontUI synced: {l} bytes")
+        client.ensure_instance('game:GetService("ServerScriptService").OpenFront.Server', "Script", "ServerMain")
+        target = 'game:GetService("ServerScriptService").OpenFront.Server.ServerMain'
+        l = client.set_script_source(target, src)
+        print(f"  [ServerScript] ServerMain synced: {l} bytes")
 
-        print("--- 7. Syncing WorldClient ---")
-        with open("src/client/WorldClient.client.lua", "r", encoding="utf-8") as f:
+    # 7. Sync Client Modules & LocalScript
+    client_modules = ["TerrainRenderer", "TerritoryRenderer", "InGameHUD", "HubScreen"]
+    for mod_name in client_modules:
+        fpath = f"src/openfront/client/{mod_name}.lua"
+        if os.path.exists(fpath):
+            with open(fpath, "r", encoding="utf-8") as f:
+                src = f.read()
+            client.ensure_instance('game:GetService("StarterPlayer").StarterPlayerScripts.OpenFront.Client', "ModuleScript", mod_name)
+            target = f'game:GetService("StarterPlayer").StarterPlayerScripts.OpenFront.Client.{mod_name}'
+            l = client.set_script_source(target, src)
+            print(f"  [Client] {mod_name} synced: {l} bytes")
+
+    fpath = "src/openfront/client/ClientMain.client.lua"
+    if os.path.exists(fpath):
+        with open(fpath, "r", encoding="utf-8") as f:
             src = f.read()
-        l = client.set_script_source('game:GetService("StarterPlayer").StarterPlayerScripts.Client.WorldClient', src)
-        print(f"WorldClient synced: {l} bytes")
+        client.ensure_instance('game:GetService("StarterPlayer").StarterPlayerScripts.OpenFront.Client', "LocalScript", "ClientMain")
+        target = 'game:GetService("StarterPlayer").StarterPlayerScripts.OpenFront.Client.ClientMain'
+        l = client.set_script_source(target, src)
+        print(f"  [ClientScript] ClientMain synced: {l} bytes")
 
-        print("\nALL SCRIPTS SYNCED SUCCESSFULLY TO ROBLOX STUDIO!")
-    finally:
-        client.close()
+    print("\n>>> ALL OPENFRONT MODULES SYNCHRONIZED CLEANLY TO STUDIO! <<<")
+
+def main():
+    try:
+        client = StudioClient()
+        try:
+            sync_openfront(client)
+        finally:
+            client.close()
+    except Exception as e:
+        print("Studio Sync Notice:", e)
+        print("Note: When Roblox Studio is opened, run 'python tools/sync_all_to_studio.py' to push all files directly into the active Studio DataModel.")
 
 if __name__ == "__main__":
     main()

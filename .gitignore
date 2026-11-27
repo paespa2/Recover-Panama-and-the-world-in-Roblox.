@@ -11,4 +11,7 @@ openfront_src/
 tools/.cache/
 *.png
 *.jpg
+__pycache__/
+*.pyc
+frontwars_bundle.js
 
